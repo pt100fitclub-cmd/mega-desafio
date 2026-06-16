@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mega Desafio — Ginásio</title>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    databaseURL: "https://desafio-interclubes-default-rtdb.europe-west1.firebasedatabase.app"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  // Expose Firebase functions globally
+  window.fbSet = (path, data) => set(ref(db, path), data);
+  window.fbUpdate = (path, data) => update(ref(db, path), data);
+  window.fbRemove = (path) => remove(ref(db, path));
+  window.fbListen = (path, cb) => onValue(ref(db, path), snap => cb(snap.val()));
+  window.firebaseReady = true;
+
+  // Start listening once Firebase is ready
+  window.addEventListener('load', () => {
+    window.fbListen('state', (data) => {
+      if (data) {
+        // Merge remote state into local, then render
+        const local = getLocalState();
+        // Remote wins for shared data
+        const merged = Object.assign({}, local, data);
+        localStorage.setItem('gymChallenge', JSON.stringify(merged));
+        renderAll();
+      }
+    });
+  });
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;900&display=swap');
+
+  :root {
+    --black: #0a0a0a;
+    --dark: #111318;
+    --card: #1a1d24;
+    --border: #2a2d35;
+    --white: #f0f0f0;
+    --dim: #888;
+    --club-a: #e63946;
+    --club-b: #f4820a;
+    --gold: #ffd700;
+    --green: #2ecc71;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ── NAV ── */
+  .nav {
+    display: flex;
+    gap: 0;
+    background: var(--dark);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .nav button {
+    flex: 1;
+    padding: 10px 4px;
+    background: none;
+    border: none;
+    color: var(--dim);
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all .2s;
+    border-bottom: 3px solid transparent;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .nav button.active {
+    color: var(--white);
+    border-bottom-color: var(--club-a);
+  }
+
+  /* ── VIEWS ── */
+  .view { display: none; padding: 24px 20px; max-width: 640px; margin: 0 auto; }
+  .view.active { display: block; }
+  #view-tv { max-width: 100%; padding: 0; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: .1em;
+    margin-bottom: 16px;
+    color: var(--white);
+  }
+
+  /* ── FORM ELEMENTS ── */
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  input, select {
+    width: 100%;
+    background: #0f1015;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--white);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input:focus, select:focus { border-color: var(--club-a); }
+  select option { background: var(--dark); }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: opacity .2s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-red { background: var(--club-a); color: #fff; }
+  .btn-blue { background: var(--club-b); color: #fff; }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-gold { background: var(--gold); color: #000; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--dim); }
+
+  /* ── STATUS BADGE ── */
+  .badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .badge-active { background: #1a3a1a; color: var(--green); }
+  .badge-waiting { background: #2a2a1a; color: var(--gold); }
+  .badge-done { background: #1a1a2a; color: var(--club-b); }
+
+  /* ── LEADERBOARD (staff/admin) ── */
+  .lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-rank {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    width: 32px;
+    text-align: center;
+    color: var(--dim);
+  }
+  .lb-rank.gold { color: var(--gold); }
+  .lb-club-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .lb-name { flex: 1; font-weight: 600; font-size: 15px; }
+  .lb-result {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: .05em;
+  }
+  .lb-unit { font-size: 11px; color: var(--dim); margin-left: 2px; }
+
+  /* ── TV VIEW ── */
+  #tv-screen {
+    min-height: 100vh;
+    background: var(--black);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tv-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 48px 20px;
+    border-bottom: 2px solid var(--border);
+  }
+  .tv-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 42px;
+    letter-spacing: .15em;
+    color: var(--white);
+  }
+  .tv-challenge-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: .1em;
+    color: var(--dim);
+  }
+  .tv-timer {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 56px;
+    color: var(--gold);
+    letter-spacing: .05em;
+    min-width: 120px;
+    text-align: right;
+  }
+
+  /* clubs score bar */
+  .tv-clubs {
+    display: flex;
+    gap: 2px;
+    padding: 0 48px;
+    margin: 20px 0;
+  }
+  .tv-club-card {
+    flex: 1;
+    padding: 18px 28px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .tv-club-card.a { background: rgba(230,57,70,.15); border: 2px solid var(--club-a); }
+  .tv-club-card.b { background: rgba(69,123,157,.15); border: 2px solid var(--club-b); }
+  .tv-club-card.leading-a { background: rgba(230,57,70,.30); }
+  .tv-club-card.leading-b { background: rgba(69,123,157,.30); }
+  .tv-club-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: .12em;
+  }
+  .tv-club-name.a { color: var(--club-a); }
+  .tv-club-name.b { color: var(--club-b); }
+  .tv-club-best {
+    text-align: right;
+  }
+  .tv-club-best-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    line-height: 1;
+  }
+  .tv-club-best-label {
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .tv-vs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--dim);
+    flex-shrink: 0;
+  }
+
+  /* tv leaderboard */
+  .tv-lb {
+    flex: 1;
+    padding: 0 48px 28px;
+    overflow: hidden;
+  }
+  .tv-lb-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+  .tv-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: var(--card);
+    border-left: 4px solid transparent;
+    transition: all .4s;
+  }
+  .tv-lb-row.club-a { border-left-color: var(--club-a); }
+  .tv-lb-row.club-b { border-left-color: var(--club-b); }
+  .tv-lb-row.top { background: #1a1500; border-left-color: var(--gold); }
+  .tv-lb-rank {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    width: 40px;
+    color: var(--dim);
+  }
+  .tv-lb-rank.gold-rank { color: var(--gold); }
+  .tv-lb-name {
+    flex: 1;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .tv-lb-club {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+  .tv-lb-club.a { background: rgba(230,57,70,.2); color: var(--club-a); }
+  .tv-lb-club.b { background: rgba(69,123,157,.2); color: var(--club-b); }
+  .tv-lb-result {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    min-width: 120px;
+    text-align: right;
+  }
+
+  /* winner overlay */
+  .winner-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    display: none;
+  }
+  .winner-overlay.show { display: flex; }
+  .winner-trophy { font-size: 80px; margin-bottom: 20px; animation: pulse 1s infinite; }
+  .winner-label {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+  .winner-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 96px;
+    letter-spacing: .1em;
+    line-height: 1;
+  }
+  .winner-name.a { color: var(--club-a); }
+  .winner-name.b { color: var(--club-b); }
+  .winner-result {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    color: var(--gold);
+    margin-top: 16px;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+
+  /* ── ADMIN CHALLENGE LIST ── */
+  .challenge-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .challenge-item:last-child { border-bottom: none; }
+  .challenge-item-name { flex: 1; font-weight: 600; }
+  .challenge-item-unit { font-size: 12px; color: var(--dim); }
+
+  .msg {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .msg.show { display: block; }
+  .msg.ok { background: #0d2a1a; color: var(--green); border: 1px solid #1a5a30; }
+  .msg.err { background: #2a0d0d; color: #ff6b6b; border: 1px solid #5a1a1a; }
+
+  .separator { height: 1px; background: var(--border); margin: 20px 0; }
+
+  .small { font-size: 13px; color: var(--dim); margin-top: -10px; margin-bottom: 14px; }
+
+  /* waiting screen */
+  .tv-waiting {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .tv-waiting-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: .15em;
+    color: var(--dim);
+  }
+  .tv-waiting-sub {
+    font-size: 13px;
+    color: #444;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .pulse-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--club-a);
+    animation: pulse 1.2s infinite;
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <button onclick="switchView('admin')"><div>⚙</div><div>Desafios</div></button>
+  <button class="active" onclick="switchView('staffA')" id="nav-staffA"><div>🔴</div><div><span id="nav-label-a">M. Martins</span></div></button>
+  <button onclick="switchView('staffB')" id="nav-staffB"><div>🟠</div><div><span id="nav-label-b">Terrugem</span></div></button>
+  <button id="nav-tv" onclick="switchView('tv')"><div>📺</div><div>Resultados</div></button>
+</nav>
+
+<!-- ══════════════════════════════════════
+     ADMIN VIEW
+══════════════════════════════════════ -->
+<div id="view-admin" class="view">
+
+  <!-- PIN Lock -->
+  <div id="admin-lock" style="text-align:center;padding:40px 20px;">
+    <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.1em;margin-bottom:8px;">ÁREA RESTRITA</div>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:24px;">Introduz o código de acesso</div>
+    <input type="password" id="admin-pin-input" placeholder="••••••" maxlength="10"
+      style="width:100%;max-width:240px;background:#0f1015;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:24px;padding:14px;text-align:center;letter-spacing:.3em;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;"
+      onkeydown="if(event.key==='Enter') checkPin()">
+    <div id="admin-pin-error" style="color:var(--club-a);font-size:13px;margin-bottom:12px;display:none;">Código incorreto</div>
+    <button class="btn btn-red" style="max-width:240px;margin:0 auto;" onclick="checkPin()">Entrar</button>
+  </div>
+
+  <!-- Admin content (hidden until PIN correct) -->
+  <div id="admin-content" style="display:none;">
+
+  <div class="card">
+    <h2>Configurar Desafios</h2>
+
+    <label>Nome do Desafio</label>
+    <input type="text" id="admin-challenge-name" placeholder="Ex: Burpees, Prancha, Remo...">
+
+    <label>Unidade de Medida</label>
+    <select id="admin-unit">
+      <option value="reps">Repetições</option>
+      <option value="seg">Segundos</option>
+      <option value="min">Minutos</option>
+      <option value="m">Metros</option>
+      <option value="kg">Quilogramas</option>
+      <option value="cal">Calorias</option>
+    </select>
+
+    <label>Ordenação (maior = melhor?)</label>
+    <select id="admin-order">
+      <option value="desc">Sim — mais é melhor (repetições, distância, peso)</option>
+      <option value="asc">Não — menos é melhor (tempo)</option>
+    </select>
+
+    <label>Duração (minutos) — opcional</label>
+    <input type="number" id="admin-duration" placeholder="Deixar vazio = sem limite de tempo" min="1" max="180">
+
+    <button class="btn btn-green" onclick="addChallenge()">+ Adicionar Desafio</button>
+  </div>
+
+  <div class="card">
+    <h2>Desafios Criados</h2>
+    <div id="admin-challenge-list"><p style="color:var(--dim);font-size:14px;">Nenhum desafio criado ainda.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Nomes dos Clubes</h2>
+    <label>M. Martins (vermelho)</label>
+    <input type="text" id="club-a-name" value="M. Martins" oninput="saveClubNames()">
+    <label>Terrugem (laranja)</label>
+    <input type="text" id="club-b-name" value="Terrugem" oninput="saveClubNames()">
+  </div>
+
+  <div class="card">
+    <h2>Controlo ao Vivo</h2>
+    <label>Seleciona o Desafio para Iniciar</label>
+    <div id="admin-challenge-btns" style="margin-bottom:14px;"></div>
+    <button class="btn btn-gold" onclick="endChallenge()" style="margin-bottom:10px">🏆 Encerrar e Anunciar Vencedor</button>
+    <button class="btn btn-ghost" onclick="resetChallenge()">↺ Resetar Resultados</button>
+  </div>
+
+  </div><!-- /admin-content -->
+
+</div>
+
+<!-- ══════════════════════════════════════
+     STAFF VIEW
+══════════════════════════════════════ -->
+<!-- STAFF CLUBE A -->
+<div id="view-staffA" class="view active">
+  <div id="staff-msg-a" class="msg"></div>
+  <div class="card" style="border-top:3px solid var(--club-a)">
+    <h2 id="staff-title-a">Lançar — M. Martins</h2>
+    <div id="staff-no-challenge-a" style="color:var(--dim);font-size:14px;padding:8px 0;">
+      Nenhum desafio ativo. Aguarda o admin iniciar.
+    </div>
+    <div id="staff-form-a" style="display:none">
+      <div id="staff-info-a" style="margin-bottom:16px;"></div>
+      <label>Nome do Participante</label>
+      <input type="text" id="staff-name-a" placeholder="Nome completo">
+      <div id="staff-time-a" style="display:none">
+        <label>Minutos</label>
+        <input type="number" id="staff-min-a" placeholder="0" min="0" style="margin-bottom:10px">
+        <label>Segundos</label>
+        <input type="number" id="staff-sec-a" placeholder="0" min="0" max="59" style="margin-bottom:14px">
+      </div>
+      <div id="staff-simple-a">
+        <label id="staff-rlabel-a">Resultado</label>
+        <input type="number" id="staff-result-a" placeholder="0" min="0" step="0.1">
+      </div>
+      <button class="btn btn-red" onclick="submitResultClub('a')">Registar Resultado</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Leaderboard Atual</h2>
+    <div id="staff-lb-a"><p style="color:var(--dim);font-size:14px;">Sem resultados ainda.</p></div>
+  </div>
+</div>
+
+<!-- STAFF CLUBE B -->
+<div id="view-staffB" class="view">
+  <div id="staff-msg-b" class="msg"></div>
+  <div class="card" style="border-top:3px solid var(--club-b)">
+    <h2 id="staff-title-b">Lançar — Terrugem</h2>
+    <div id="staff-no-challenge-b" style="color:var(--dim);font-size:14px;padding:8px 0;">
+      Nenhum desafio ativo. Aguarda o admin iniciar.
+    </div>
+    <div id="staff-form-b" style="display:none">
+      <div id="staff-info-b" style="margin-bottom:16px;"></div>
+      <label>Nome do Participante</label>
+      <input type="text" id="staff-name-b" placeholder="Nome completo">
+      <div id="staff-time-b" style="display:none">
+        <label>Minutos</label>
+        <input type="number" id="staff-min-b" placeholder="0" min="0" style="margin-bottom:10px">
+        <label>Segundos</label>
+        <input type="number" id="staff-sec-b" placeholder="0" min="0" max="59" style="margin-bottom:14px">
+      </div>
+      <div id="staff-simple-b">
+        <label id="staff-rlabel-b">Resultado</label>
+        <input type="number" id="staff-result-b" placeholder="0" min="0" step="0.1">
+      </div>
+      <button class="btn btn-blue" onclick="submitResultClub('b')">Registar Resultado</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Leaderboard Atual</h2>
+    <div id="staff-lb-b"><p style="color:var(--dim);font-size:14px;">Sem resultados ainda.</p></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TV VIEW
+══════════════════════════════════════ -->
+<div id="view-tv" class="view">
+  <div id="tv-screen">
+
+    <div class="tv-header">
+      <div>
+        <div class="tv-title">MEGA DESAFIO</div>
+        <div id="tv-challenge-name" class="tv-challenge-name">Aguardar início...</div>
+      </div>
+      <div id="tv-timer" class="tv-timer">--:--</div>
+    </div>
+
+    <!-- Unified ranking list -->
+    <div id="tv-podium" style="display:none"></div>
+    <div class="tv-lb" style="padding-top:8px;">
+      <div id="tv-lb-rows">
+        <div class="tv-waiting">
+          <div class="tv-waiting-title">EM ESPERA</div>
+          <div class="tv-waiting-sub">O desafio começa em breve</div>
+          <div class="pulse-dot"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Winner Overlay -->
+  <div class="winner-overlay" id="winner-overlay" onclick="document.getElementById('winner-overlay').classList.remove('show')">
+    <div style="width:100%;max-width:480px;padding:24px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:48px;margin-bottom:8px;">🏆</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:.2em;color:var(--gold);">PÓDIO</div>
+        <div id="winner-challenge-name" style="font-size:13px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;"></div>
+      </div>
+      <div id="winner-podium" style="display:flex;flex-direction:column;gap:10px;"></div>
+      <div style="text-align:center;margin-top:24px;font-size:11px;color:#444;letter-spacing:.08em;text-transform:uppercase;">Toca para fechar</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════
+// STATE (localStorage para persistência)
+// ══════════════════════════════════════
+function getState() {
+  return getLocalState();
+}
+function getLocalState() {
+  return JSON.parse(localStorage.getItem('gymChallenge') || JSON.stringify({
+    challenges: [],
+    activeChallenge: null,
+    results: {},
+    clubNames: { a: 'M. Martins', b: 'Terrugem' },
+    winner: null,
+    timerEnd: null,
+    activeStaffClub: 'a'
+  }));
+}
+
+function setState(s) {
+  localStorage.setItem('gymChallenge', JSON.stringify(s));
+  // Push to Firebase
+  if (window.firebaseReady && window.fbSet) {
+    window.fbSet('state', s).catch(e => console.warn('Firebase write error:', e));
+  }
+}
+
+// ══════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  event.target.classList.add('active');
+  if (v === 'admin') checkAdminAccess();
+  renderAll();
+}
+
+// ══════════════════════════════════════
+// ADMIN
+// ══════════════════════════════════════
+function addChallenge() {
+  const name = document.getElementById('admin-challenge-name').value.trim();
+  const unit = document.getElementById('admin-unit').value;
+  const order = document.getElementById('admin-order').value;
+  const durationRaw = document.getElementById('admin-duration').value;
+  const duration = durationRaw ? parseInt(durationRaw) : null;
+  if (!name) { alert('Dá um nome ao desafio.'); return; }
+  const s = getState();
+  s.challenges.push({ id: Date.now(), name, unit, order, duration });
+  setState(s);
+  document.getElementById('admin-challenge-name').value = '';
+  document.getElementById('admin-duration').value = '';
+  renderAll();
+}
+
+function deleteChallenge(id) {
+  const s = getState();
+  s.challenges = s.challenges.filter(c => c.id !== id);
+  if (s.activeChallenge === id) s.activeChallenge = null;
+  setState(s);
+  renderAll();
+}
+
+function startChallenge(id) {
+  const s = getState();
+  if (!id) { alert('Seleciona um desafio primeiro.'); return; }
+  const ch = s.challenges.find(c => c.id === id);
+  if (!ch) return;
+  s.activeChallenge = id;
+  s.winner = null;
+  s.timerEnd = ch.duration ? Date.now() + ch.duration * 60 * 1000 : null;
+  if (!s.results[id]) s.results[id] = [];
+  setState(s);
+  renderAll();
+}
+
+function endChallenge() {
+  const s = getState();
+  if (!s.activeChallenge) { alert('Nenhum desafio ativo.'); return; }
+  const id = s.activeChallenge;
+  const ch = s.challenges.find(c => c.id === id);
+  const results = (s.results[id] || []);
+  if (results.length === 0) { alert('Sem resultados lançados.'); return; }
+  const sorted = [...results].filter(r => !r.disqualified).sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
+  if (sorted.length === 0) { alert('Sem resultados válidos (todos desclassificados?).'); return; }
+  const top3 = sorted.slice(0, 3);
+  s.winner = {
+    podium: top3.map(r => ({ club: r.club, name: r.name, value: r.value, displayValue: displayValue(r.value, ch.unit) })),
+    unit: ch.unit,
+    challengeName: ch.name
+  };
+  s.timerEnd = null;
+  setState(s);
+  // Switch to Resultados tab so winner overlay is visible
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-tv').classList.add('active');
+  document.getElementById('nav-tv').classList.add('active');
+  renderAll();
+}
+
+function resetChallenge() {
+  if (!confirm('Apagar todos os resultados do desafio ativo?')) return;
+  const s = getState();
+  if (!s.activeChallenge) return;
+  s.results[s.activeChallenge] = [];
+  s.winner = null;
+  setState(s);
+  renderAll();
+}
+
+function saveClubNames() {
+  const s = getState();
+  s.clubNames.a = document.getElementById('club-a-name').value || 'M. Martins';
+  s.clubNames.b = document.getElementById('club-b-name').value || 'Terrugem';
+  setState(s);
+  renderAll();
+}
+
+// ══════════════════════════════════════
+// STAFF
+// ══════════════════════════════════════
+function isTimeUnit(unit) {
+  return unit === 'min' || unit === 'seg';
+}
+
+// submitResult replaced by submitResultClub
+
+function formatTime(totalSecs) {
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function displayValue(value, unit) {
+  if (isTimeUnit(unit)) return formatTime(value);
+  return value + ' ' + unit;
+}
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ══════════════════════════════════════
+// STAFF PER CLUB
+// ══════════════════════════════════════
+function submitResultClub(club) {
+  const s = getState();
+  if (!s.activeChallenge) return;
+  const ch = s.challenges.find(c => c.id === s.activeChallenge);
+  const name = document.getElementById('staff-name-' + club).value.trim();
+  if (!name) { showMsg('staff-msg-' + club, 'Insere o nome do participante.', 'err'); return; }
+  let value, displayStr;
+  if (isTimeUnit(ch.unit)) {
+    const mins = parseInt(document.getElementById('staff-min-' + club).value) || 0;
+    const secs = parseInt(document.getElementById('staff-sec-' + club).value) || 0;
+    if (secs > 59) { showMsg('staff-msg-' + club, 'Segundos têm de ser entre 0 e 59.', 'err'); return; }
+    value = mins * 60 + secs;
+    displayStr = formatTime(value);
+    document.getElementById('staff-min-' + club).value = '';
+    document.getElementById('staff-sec-' + club).value = '';
+  } else {
+    value = parseFloat(document.getElementById('staff-result-' + club).value);
+    if (isNaN(value) || value < 0) { showMsg('staff-msg-' + club, 'Insere um resultado válido.', 'err'); return; }
+    displayStr = value + ' ' + ch.unit;
+    document.getElementById('staff-result-' + club).value = '';
+  }
+  document.getElementById('staff-name-' + club).value = '';
+  if (!s.results[s.activeChallenge]) s.results[s.activeChallenge] = [];
+  s.results[s.activeChallenge].push({ name, club, value, ts: Date.now() });
+  setState(s);
+  showMsg('staff-msg-' + club, '✓ ' + name + ' — ' + displayStr, 'ok');
+  renderAll();
+}
+
+// ══════════════════════════════════════
+// PIN / ACCESS CONTROL
+// ══════════════════════════════════════
+const ADMIN_PIN = '100%';
+
+function checkPin() {
+  const input = document.getElementById('admin-pin-input').value;
+  if (input === ADMIN_PIN) {
+    document.getElementById('admin-lock').style.display = 'none';
+    document.getElementById('admin-content').style.display = 'block';
+  } else {
+    const err = document.getElementById('admin-pin-error');
+    err.style.display = 'block';
+    document.getElementById('admin-pin-input').value = '';
+    setTimeout(() => err.style.display = 'none', 2000);
+  }
+}
+
+function checkAdminAccess() {
+  // Always ask for PIN when entering Desafios tab
+  document.getElementById('admin-lock').style.display = 'block';
+  document.getElementById('admin-content').style.display = 'none';
+  document.getElementById('admin-pin-input').value = '';
+  document.getElementById('admin-pin-error').style.display = 'none';
+}
+
+// ══════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════
+function renderAll() {
+  const s = getState();
+  renderAdmin(s);
+  renderStaff(s);
+  renderTV(s);
+}
+
+function renderAdmin(s) {
+  // challenge list
+  const list = document.getElementById('admin-challenge-list');
+  const btns = document.getElementById('admin-challenge-btns');
+  if (s.challenges.length === 0) {
+    list.innerHTML = '<p style="color:var(--dim);font-size:14px;">Nenhum desafio criado ainda.</p>';
+    if (btns) btns.innerHTML = '<p style="color:var(--dim);font-size:14px;">Cria um desafio primeiro.</p>';
+  } else {
+    list.innerHTML = s.challenges.map(c => `
+      <div class="challenge-item">
+        <div>
+          <div class="challenge-item-name">${c.name}</div>
+          <div class="challenge-item-unit">${c.unit} · ${c.order === 'desc' ? 'mais é melhor' : 'menos é melhor'} · ${c.duration ? c.duration + ' min' : 'sem limite de tempo'}</div>
+        </div>
+        <span class="badge ${s.activeChallenge === c.id ? 'badge-active' : 'badge-waiting'}">
+          ${s.activeChallenge === c.id ? 'ATIVO' : 'Em espera'}
+        </span>
+        <button onclick="deleteChallenge(${c.id})" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    `).join('');
+    if (btns) btns.innerHTML = s.challenges.map(c => `
+      <button onclick="startChallenge(${c.id})" class="btn ${s.activeChallenge === c.id ? 'btn-green' : 'btn-red'}" style="margin-bottom:8px">
+        ${s.activeChallenge === c.id ? '✓ ATIVO' : '▶ Iniciar'}: ${c.name}
+      </button>
+    `).join('');
+  }
+  // club names
+  document.getElementById('club-a-name').value = s.clubNames.a;
+  document.getElementById('club-b-name').value = s.clubNames.b;
+}
+
+function renderStaffPanel(s, club) {
+  const suffix = club;
+  const ch = s.challenges.find(c => c.id === s.activeChallenge);
+  const clubName = club === 'a' ? s.clubNames.a : s.clubNames.b;
+
+  // Nav label — strip "Clube " prefix if present
+  const navLabel = document.getElementById('nav-label-' + club);
+  if (navLabel) navLabel.textContent = clubName.replace(/^Clube\s+/i, '');
+
+  // Title
+  const title = document.getElementById('staff-title-' + suffix);
+  if (title) title.textContent = 'Lançar — ' + clubName;
+
+  const form = document.getElementById('staff-form-' + suffix);
+  const noChallenge = document.getElementById('staff-no-challenge-' + suffix);
+
+  if (!ch) {
+    if (form) form.style.display = 'none';
+    if (noChallenge) noChallenge.style.display = 'block';
+  } else {
+    if (form) form.style.display = 'block';
+    if (noChallenge) noChallenge.style.display = 'none';
+    const info = document.getElementById('staff-info-' + suffix);
+    if (info) info.innerHTML = `<span class="badge badge-active">ATIVO</span> <strong style="margin-left:8px;font-size:16px;">${ch.name}</strong> <span style="color:var(--dim);font-size:13px;margin-left:8px;">(${ch.unit})</span>`;
+    const isTime = isTimeUnit(ch.unit);
+    const timeDiv = document.getElementById('staff-time-' + suffix);
+    const simpleDiv = document.getElementById('staff-simple-' + suffix);
+    if (timeDiv) timeDiv.style.display = isTime ? 'block' : 'none';
+    if (simpleDiv) simpleDiv.style.display = isTime ? 'none' : 'block';
+    const rlabel = document.getElementById('staff-rlabel-' + suffix);
+    if (rlabel && !isTime) rlabel.textContent = 'Resultado (' + ch.unit + ')';
+  }
+
+  // Leaderboard
+  const lb = document.getElementById('staff-lb-' + suffix);
+  if (!lb) return;
+  const results = ch ? (s.results[ch.id] || []) : [];
+  const myResults = results.filter(r => r.club === club);
+  if (myResults.length === 0) {
+    lb.innerHTML = '<p style="color:var(--dim);font-size:14px;">Sem resultados ainda.</p>';
+  } else {
+    const active = [...myResults].filter(r => !r.disqualified).sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
+    const disq = myResults.filter(r => r.disqualified);
+    const renderRow = (r, rank, isDisq) => `
+      <div class="lb-row" style="${isDisq ? 'opacity:.5;' : ''}">
+        <div class="lb-rank ${rank === 0 && !isDisq ? 'gold' : ''}" style="${isDisq ? 'color:#555;font-size:13px;' : ''}">${isDisq ? 'DQ' : rank + 1}</div>
+        <div class="lb-name" style="${isDisq ? 'text-decoration:line-through;color:var(--dim);' : ''}">${r.name}</div>
+        <div class="lb-result" style="${isDisq ? 'color:#555;' : ''}">${isDisq ? '—' : displayValue(r.value, ch.unit)}</div>
+        <button onclick="openEditModal(${r.ts})" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
+      </div>
+    `;
+    lb.innerHTML = active.map((r, i) => renderRow(r, i, false)).join('') +
+      (disq.length ? '<div style="height:1px;background:var(--border);margin:8px 0;"></div>' : '') +
+      disq.map(r => renderRow(r, -1, true)).join('');
+  }
+}
+
+function openEditModal(ts) {
+  const s = getState();
+  if (!s.activeChallenge) return;
+  const ch = s.challenges.find(c => c.id === s.activeChallenge);
+  const results = s.results[s.activeChallenge] || [];
+  const r = results.find(r => r.ts === ts);
+  if (!r) return;
+
+  // Build modal
+  const isTime = isTimeUnit(ch.unit);
+  let valueFields = '';
+  if (isTime) {
+    const mins = Math.floor(r.value / 60);
+    const secs = r.value % 60;
+    valueFields = `
+      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">Minutos</label>
+      <input type="number" id="modal-min" value="${mins}" min="0" style="width:100%;background:#0f1015;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:15px;padding:10px 14px;margin-bottom:10px;">
+      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">Segundos</label>
+      <input type="number" id="modal-sec" value="${secs}" min="0" max="59" style="width:100%;background:#0f1015;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:15px;padding:10px 14px;margin-bottom:14px;">`;
+  } else {
+    valueFields = `
+      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">Resultado (${ch.unit})</label>
+      <input type="number" id="modal-val" value="${r.value}" min="0" step="0.1" style="width:100%;background:#0f1015;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:15px;padding:10px 14px;margin-bottom:14px;">`;
+  }
+
+  const dqLabel = r.disqualified ? 'Reativar Resultado' : 'Desclassificar';
+  const dqColor = r.disqualified ? '#2ecc71' : '#e6a817';
+
+  const modal = document.getElementById('edit-modal');
+  document.getElementById('edit-modal-title').textContent = r.name;
+  document.getElementById('edit-modal-body').innerHTML = valueFields;
+  document.getElementById('edit-modal-dq').textContent = dqLabel;
+  document.getElementById('edit-modal-dq').style.color = dqColor;
+  modal.dataset.ts = ts;
+  modal.style.display = 'flex';
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+
+function saveEdit() {
+  const modal = document.getElementById('edit-modal');
+  const ts = parseInt(modal.dataset.ts);
+  const s = getState();
+  if (!s.activeChallenge) return;
+  const ch = s.challenges.find(c => c.id === s.activeChallenge);
+  const results = s.results[s.activeChallenge] || [];
+  const r = results.find(r => r.ts === ts);
+  if (!r) return;
+
+  if (isTimeUnit(ch.unit)) {
+    const mins = parseInt(document.getElementById('modal-min').value) || 0;
+    const secs = parseInt(document.getElementById('modal-sec').value) || 0;
+    r.value = mins * 60 + secs;
+  } else {
+    const val = parseFloat(document.getElementById('modal-val').value);
+    if (!isNaN(val)) r.value = val;
+  }
+  setState(s);
+  closeEditModal();
+  renderAll();
+}
+
+function toggleDQ() {
+  const modal = document.getElementById('edit-modal');
+  const ts = parseInt(modal.dataset.ts);
+  const s = getState();
+  if (!s.activeChallenge) return;
+  const results = s.results[s.activeChallenge] || [];
+  const r = results.find(r => r.ts === ts);
+  if (!r) return;
+  r.disqualified = !r.disqualified;
+  setState(s);
+  closeEditModal();
+  renderAll();
+}
+
+function deleteResult(ts) {
+  if (!confirm('Apagar este resultado permanentemente?')) return;
+  const s = getState();
+  if (!s.activeChallenge) return;
+  s.results[s.activeChallenge] = (s.results[s.activeChallenge] || []).filter(r => r.ts !== ts);
+  setState(s);
+  closeEditModal();
+  renderAll();
+}
+
+function disqualifyResult(ts) {
+  toggleDQ();
+}
+
+function renderStaff(s) {
+  renderStaffPanel(s, 'a');
+  renderStaffPanel(s, 'b');
+}
+
+function renderTV(s) {
+  const ch = s.challenges.find(c => c.id === s.activeChallenge);
+  const results = ch ? (s.results[ch.id] || []) : [];
+
+  // (club name elements removed from TV - now shown per row in leaderboard)
+
+  // winner overlay
+  const overlay = document.getElementById('winner-overlay');
+  if (s.winner && s.winner.podium) {
+    overlay.classList.add('show');
+    document.getElementById('winner-challenge-name').textContent = s.winner.challengeName || '';
+    const medals = ['🥇','🥈','🥉'];
+    document.getElementById('winner-podium').innerHTML = s.winner.podium.map((r, i) => {
+      const clubName = r.club === 'a' ? s.clubNames.a : s.clubNames.b;
+      const clubColor = r.club === 'a' ? 'var(--club-a)' : 'var(--club-b)';
+      const bg = i === 0 ? `rgba(${r.club === 'a' ? '230,57,70' : '244,130,10'},.15)` : 'rgba(255,255,255,.05)';
+      const border = i === 0 ? `2px solid ${r.club === 'a' ? 'var(--club-a)' : 'var(--club-b)'}` : '1px solid #333';
+      return `
+        <div style="display:flex;align-items:center;gap:14px;background:${bg};border:${border};border-radius:12px;padding:14px 18px;">
+          <div style="font-size:${i===0?'36px':'28px'};flex-shrink:0;">${medals[i]}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:${i===0?'26px':'20px'};letter-spacing:.05em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name.toUpperCase()}</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:${clubColor};margin-top:3px;">${clubName}</div>
+          </div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:${i===0?'28px':'22px'};color:${clubColor};flex-shrink:0;">${r.displayValue}</div>
+        </div>`;
+    }).join('');
+  } else {
+    overlay.classList.remove('show');
+  }
+
+  const podium = document.getElementById('tv-podium');
+  const lbRows = document.getElementById('tv-lb-rows');
+
+  if (!ch) {
+    document.getElementById('tv-challenge-name').textContent = 'Aguardar início...';
+    document.getElementById('tv-timer').textContent = '--:--';
+    podium.innerHTML = '';
+    lbRows.innerHTML = `
+      <div class="tv-waiting">
+        <div class="tv-waiting-title">EM ESPERA</div>
+        <div class="tv-waiting-sub">O desafio começa em breve</div>
+        <div class="pulse-dot"></div>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('tv-challenge-name').textContent = ch.name.toUpperCase();
+
+  // Sort first — must come before any use of sorted
+  const sorted = [...results].filter(r => !r.disqualified).sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
+  const top3 = sorted.slice(0, 3);
+  const rest = sorted.slice(3);
+
+  // PODIUM — top 3
+  const medals = ['🥇','🥈','🥉'];
+  const podiumSizes = ['56px','44px','40px'];
+  const podiumValueSizes = ['72px','56px','48px'];
+
+  if (sorted.length === 0) {
+    podium.innerHTML = '';
+    lbRows.innerHTML = `<div class="tv-waiting"><div class="tv-waiting-title">SEM RESULTADOS</div><div class="tv-waiting-sub">À espera do primeiro lançamento</div><div class="pulse-dot"></div></div>`;
+  } else {
+    podium.innerHTML = '';
+
+    // Single unified list — top 3 highlighted, rest normal
+    lbRows.innerHTML = sorted.map((r, i) => {
+      const pos = i + 1;
+      const clubName = r.club === 'a' ? s.clubNames.a : s.clubNames.b;
+      const clubColor = r.club === 'a' ? 'var(--club-a)' : 'var(--club-b)';
+      const isTop3 = i < 3;
+      const medal = ['🥇','🥈','🥉'][i] || '';
+
+      const rowBg = i === 0 ? `rgba(${r.club === 'a' ? '230,57,70' : '244,130,10'},.12)` : i < 3 ? 'var(--card)' : 'transparent';
+      const rowBorder = i === 0 ? 'border-left:4px solid var(--gold)' : i < 3 ? `border-left:4px solid ${clubColor}` : `border-left:4px solid ${clubColor}40`;
+      const nameSize = i < 3 ? '16px' : '13px';
+      const resultSize = i < 3 ? '20px' : '14px';
+      const rankColor = i === 0 ? 'var(--gold)' : i < 3 ? 'var(--white)' : 'var(--dim)';
+      const rankSize = i < 3 ? '20px' : '14px';
+      const padding = isTop3 ? '10px 14px' : '7px 14px';
+      const clubShort = r.club === 'a' ? 'M. MARTINS' : 'TERRUGEM';
+
+      return `
+        <div style="display:flex;align-items:center;gap:10px;background:${rowBg};${rowBorder};border-radius:8px;padding:${padding};margin-bottom:5px;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:${rankSize};color:${rankColor};width:36px;text-align:center;flex-shrink:0;line-height:1;">${medal || pos}</div>
+          <div style="flex:1;min-width:0;overflow:hidden;">
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:${nameSize};letter-spacing:.03em;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name.toUpperCase()}</div>
+            <div style="font-size:9px;font-weight:700;letter-spacing:.08em;color:${clubColor};margin-top:1px;">${clubShort}</div>
+          </div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:${resultSize};color:${clubColor};line-height:1;text-align:right;flex-shrink:0;padding-left:6px;">${displayValue(r.value, ch.unit)}</div>
+        </div>`;
+    }).join('');
+  }
+}
+
+// ══════════════════════════════════════
+// TIMER
+// ══════════════════════════════════════
+function updateTimer() {
+  const s = getState();
+  const timerEl = document.getElementById('tv-timer');
+  if (!s.timerEnd || s.winner) {
+    timerEl.textContent = s.activeChallenge && !s.winner ? '∞' : '--:--';
+    timerEl.style.color = 'var(--gold)';
+    return;
+  }
+  const remaining = Math.max(0, s.timerEnd - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  timerEl.textContent = `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  timerEl.style.color = remaining < 60000 ? 'var(--club-a)' : 'var(--gold)';
+}
+
+// ══════════════════════════════════════
+// AUTO REFRESH (simula tempo real entre dispositivos)
+// ══════════════════════════════════════
+setInterval(() => {
+  renderAll();
+  updateTimer();
+}, 1000);
+
+// Init
+renderAll();
+updateTimer();
+</script>
+<!-- Edit Modal -->
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:400px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.08em;" id="edit-modal-title">—</div>
+      <button onclick="closeEditModal()" style="background:none;border:none;color:var(--dim);font-size:22px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="edit-modal-body"></div>
+    <button onclick="saveEdit()" class="btn btn-green" style="margin-bottom:10px;">💾 Guardar Resultado</button>
+    <button id="edit-modal-dq" onclick="toggleDQ()" class="btn" style="background:transparent;border:1px solid var(--border);margin-bottom:10px;"></button>
+    <button onclick="deleteResult(parseInt(document.getElementById('edit-modal').dataset.ts))" class="btn" style="background:transparent;border:1px solid #5a1a1a;color:#ff6b6b;">🗑 Eliminar</button>
+  </div>
+</div>
+</body>
+</html>
