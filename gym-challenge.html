@@ -26,13 +26,13 @@
   window.addEventListener('load', () => {
     window.fbListen('state', (data) => {
       if (data) {
-        // Merge remote state into local, then render
-        const local = getLocalState();
-        // Remote wins for shared data
-        const merged = Object.assign({}, local, data);
-        localStorage.setItem('gymChallenge', JSON.stringify(merged));
-        renderAll();
+        // Firebase is the source of truth — replace local completely
+        localStorage.setItem('gymChallenge', JSON.stringify(data));
+      } else {
+        // No data in Firebase yet — clear local to start fresh
+        localStorage.removeItem('gymChallenge');
       }
+      renderAll();
     });
   });
 </script>
