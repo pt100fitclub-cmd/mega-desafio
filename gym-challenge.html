@@ -1692,7 +1692,13 @@ function onUploadFileChosen(event) {
 // caso contrário, guarda a imagem embutida no Firebase (comportamento anterior).
 async function savePhotoRecord(club, dataUrl) {
   const id = 'p' + Date.now() + Math.floor(Math.random() * 1000);
-  let finalImg = dataUrl;
+  // O mural mostra sempre a imagem embutida (dataUrl) — é o que garante que a
+  // foto aparece de facto no ecrã, em qualquer dispositivo, sem depender de
+  // terceiros. O envio ao Drive (se configurado) é só uma cópia de arquivo em
+  // segundo plano; o link do Drive fica guardado em "driveUrl" só para referência,
+  // mas NUNCA é usado como src de <img> porque o Drive costuma bloquear esse
+  // tipo de acesso direto e a imagem aparece partida.
+  let driveUrl = null;
   let source = 'inline';
 
   if (DRIVE_UPLOAD_URL) {
@@ -1706,17 +1712,17 @@ async function savePhotoRecord(club, dataUrl) {
       });
       const json = await res.json();
       if (json && json.ok && json.url) {
-        finalImg = json.url;
-        source = 'drive';
+        driveUrl = json.url;
+        source = 'drive+inline';
       } else {
-        console.warn('Resposta inesperada do Apps Script, a guardar localmente:', json);
+        console.warn('Resposta inesperada do Apps Script, a guardar só embutido:', json);
       }
     } catch (e) {
-      console.warn('Falha ao enviar para o Drive, a guardar embutido:', e);
+      console.warn('Falha ao enviar para o Drive, a guardar só embutido:', e);
     }
   }
 
-  const payload = { img: finalImg, ts: Date.now(), source };
+  const payload = { img: dataUrl, driveUrl, ts: Date.now(), source };
   if (window.firebaseReady && window.fbSet) {
     window.fbSet('photosWeek/' + club + '/' + id, payload);
   }
