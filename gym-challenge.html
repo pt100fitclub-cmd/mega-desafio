@@ -328,6 +328,11 @@
   .photo-thumb { position:relative; aspect-ratio: 1; border-radius: 10px; overflow:hidden; cursor:pointer; border: 2px solid var(--border); }
   .photo-thumb.a { border-color: var(--club-a); }
   .photo-thumb.b { border-color: var(--club-b); }
+  .howto-share { margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; }
+  .howto-share .howto-share-title { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
+  .howto-share ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  .howto-share li { font-size: 12.5px; line-height: 1.4; color: var(--dim); }
+  .howto-share b { color: var(--white); }
   .photo-thumb img { width:100%; height:100%; object-fit: cover; display:block; }
   .photo-share-btn {
     position:absolute; bottom:6px; right:6px; width:28px; height:28px; border-radius:50%;
@@ -661,7 +666,9 @@
     <div class="small" style="margin-top:0;">Envia uma foto do momento para o mural do <b id="staff-photo-title-a2">M. Martins</b>, visível em Resultados → Fotos.</div>
     <div id="staff-photo-msg-a" class="msg"></div>
     <label class="btn btn-red" for="staff-photo-input-a">📸 Adicionar foto — <span id="staff-photo-title-a3">M. Martins</span></label>
-    <input type="file" id="staff-photo-input-a" accept="image/*" capture="environment" style="display:none;" onchange="onStaffFileChosen(event,'a')">
+    <input type="file" id="staff-photo-input-a" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'a')">
+    <button id="staff-photo-share-a" class="btn btn-green" style="display:none;margin-top:10px;" onclick="shareToInstagram('a', this.dataset.photoId)">📤 Partilhar no Instagram</button>
+    <div id="staff-photo-howto-a" class="howto-share" style="display:none;"></div>
   </div>
 </div>
 
@@ -679,7 +686,9 @@
     <div class="small" style="margin-top:0;">Envia uma foto do momento para o mural do <b id="staff-photo-title-b2">Terrugem</b>, visível em Resultados → Fotos.</div>
     <div id="staff-photo-msg-b" class="msg"></div>
     <label class="btn btn-blue" for="staff-photo-input-b">📸 Adicionar foto — <span id="staff-photo-title-b3">Terrugem</span></label>
-    <input type="file" id="staff-photo-input-b" accept="image/*" capture="environment" style="display:none;" onchange="onStaffFileChosen(event,'b')">
+    <input type="file" id="staff-photo-input-b" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'b')">
+    <button id="staff-photo-share-b" class="btn btn-green" style="display:none;margin-top:10px;" onclick="shareToInstagram('b', this.dataset.photoId)">📤 Partilhar no Instagram</button>
+    <div id="staff-photo-howto-b" class="howto-share" style="display:none;"></div>
   </div>
 </div>
 
@@ -692,7 +701,7 @@
     <label class="upload-file-label" id="upload-file-label" for="upload-file-input">
       📸 Toca aqui para tirar ou escolher uma foto
     </label>
-    <input type="file" id="upload-file-input" accept="image/*" capture="environment" style="display:none;" onchange="onUploadFileChosen(event)">
+    <input type="file" id="upload-file-input" accept="image/*" style="display:none;" onchange="onUploadFileChosen(event)">
     <img id="upload-preview" class="upload-photo-preview">
 
     <div id="upload-msg" class="msg" style="display:none;"></div>
@@ -712,7 +721,6 @@
         <div class="tv-page-tab" id="tv-page-tab-placar" onclick="selectTvPage('placar')">🏆 Placar</div>
         <div class="tv-page-tab" id="tv-page-tab-fotos" onclick="selectTvPage('fotos')">📷 Fotos</div>
       </div>
-      <div id="gallery-upload-msg" class="msg"></div>
       <div id="tv-placar-header">
         <div class="tv-view-tabs" id="tv-view-tabs" style="margin-top:16px;"></div>
         <div class="score-bar" id="tv-score-bar"></div>
@@ -727,8 +735,6 @@
     <button class="lightbox-close" onclick="closeLightbox()">✕</button>
     <div class="lightbox-inner">
       <img id="lightbox-img" src="">
-      <button class="btn btn-green" onclick="shareToInstagram()">📤 Partilhar no Instagram</button>
-      <div class="upload-hint" id="lightbox-hint"></div>
     </div>
   </div>
 
@@ -1689,7 +1695,7 @@ async function savePhotoRecord(club, dataUrl) {
   const photos = getPhotos();
   photos[club][id] = payload;
   localStorage.setItem('gymChallengeWeekPhotos_v1', JSON.stringify(photos));
-  return payload;
+  return { id, ...payload };
 }
 
 async function sendPhoto() {
@@ -1720,12 +1726,20 @@ async function onStaffFileChosen(event, club) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   const msgId = 'staff-photo-msg-' + club;
+  const shareBtn = document.getElementById('staff-photo-share-' + club);
+  const howtoEl = document.getElementById('staff-photo-howto-' + club);
+  shareBtn.style.display = 'none';
+  howtoEl.style.display = 'none';
   showMsg(msgId, 'A enviar foto…', 'ok');
   try {
     const dataUrl = await compressImage(file);
-    await savePhotoRecord(club, dataUrl);
+    const saved = await savePhotoRecord(club, dataUrl);
     renderPhotoGallery();
     showMsg(msgId, '✓ Foto adicionada ao mural.', 'ok');
+    // mesmo botão de partilha que existe no mural (Resultados → Fotos), já disponível
+    // aqui mesmo a seguir ao envio, sem a pessoa ter de ir procurar a foto lá.
+    shareBtn.dataset.photoId = saved.id;
+    shareBtn.style.display = 'block';
   } catch (e) {
     showMsg(msgId, 'Não foi possível enviar esta foto.', 'err');
   }
@@ -1777,7 +1791,6 @@ function renderPhotoGallery() {
     photosBody.innerHTML = `<div class="photo-grid">` + allEntries.map(e => `
       <div class="photo-thumb ${e.club}" onclick="openLightbox('${e.club}','${e.id}')">
         <img src="${e.img}" loading="lazy">
-        <button class="photo-share-btn" onclick="event.stopPropagation(); shareToInstagram('${e.club}','${e.id}')">📤</button>
       </div>`).join('') + `</div>`;
   } else {
     placarHeader.style.display = '';
@@ -1794,7 +1807,6 @@ function openLightbox(club, id) {
   lightboxCurrentClub = club;
   lightboxCurrentId = id;
   document.getElementById('lightbox-img').src = entry.img;
-  document.getElementById('lightbox-hint').textContent = '';
   document.getElementById('photo-lightbox').classList.add('show');
 }
 function closeLightbox() {
@@ -1804,30 +1816,39 @@ function closeLightbox() {
   lightboxCurrentId = null;
 }
 
-// Mostra uma mensagem de estado da partilha no sítio certo: dentro do lightbox
-// se estiver aberto, ou junto do botão "Adicionar foto" caso contrário.
-function setShareHint(text) {
-  if (document.getElementById('photo-lightbox').classList.contains('show')) {
-    document.getElementById('lightbox-hint').textContent = text;
-  } else {
-    showMsg('gallery-upload-msg', text, 'ok');
-  }
+// Constrói o guia passo-a-passo mostrado depois de partilhar, já que nenhuma app
+// consegue publicar diretamente no Instagram com legenda, localização ou marcações
+// preenchidas — isso só é possível a fazer manualmente, dentro da própria app do
+// Instagram. Este guia fica visível (não desaparece sozinho) para dar tempo de
+// trocar de app e seguir os passos com calma.
+function buildIgHowto(club, shareResult) {
+  const opening = shareResult === 'native'
+    ? 'A legenda já foi copiada e o ecrã de partilha do telemóvel deve ter aberto.'
+    : 'A legenda já foi copiada e a foto foi guardada no teu telemóvel.';
+  return `
+    <div class="howto-share-title">Como terminar a publicação</div>
+    <ol>
+      <li>${opening} Se o Instagram não abriu sozinho, abre-o e cria uma <b>publicação ou story</b> com esta foto.</li>
+      <li>No campo da legenda, mantém o dedo premido → <b>Colar</b> — a legenda já está copiada, não precisas de escrever nada.</li>
+      <li>Para identificar o ginásio: toca em <b>Adicionar localização</b> e procura por "100% FitClub".</li>
+      <li>Para marcar como parceria oficial (só em publicações no feed, não em stories): toca em <b>Etiquetar pessoas</b> → <b>Convidar colaborador</b> → escreve <b>@100_fitclub</b>.</li>
+      <li>Para desafiares o teu amigo: escreve <b>@</b> seguido do nome dele diretamente na legenda (já está sugerido no texto colado), ou usa <b>Marcar pessoas</b> na própria foto.</li>
+    </ol>`;
 }
 
-// Chamado com (club, id) a partir do ícone 📤 numa miniatura (partilha direta,
-// sem abrir o lightbox), ou sem argumentos a partir do botão dentro do lightbox.
+// Chamado só a partir do botão "📤 Partilhar no Instagram" que aparece na aba
+// Lançar, logo a seguir a enviares a tua própria foto. O mural (Resultados →
+// Fotos) é só para ver — a partilha só está disponível para quem acabou de
+// carregar a foto, não para quem está só a ver o mural.
 async function shareToInstagram(club, id) {
-  let imgUrl = lightboxCurrentUrl;
-  let shareClub = club || lightboxCurrentClub || 'a';
-  if (club && id) {
-    const photos = getPhotos();
-    const entry = photos[club] && photos[club][id];
-    if (!entry) return;
-    imgUrl = entry.img;
-  }
-  if (!imgUrl) return;
+  const photos = getPhotos();
+  const entry = photos[club] && photos[club][id];
+  if (!entry) return;
+  const imgUrl = entry.img;
+  const msgId = 'staff-photo-msg-' + club;
+  const howtoEl = document.getElementById('staff-photo-howto-' + club);
 
-  const caption = buildIgCaption(shareClub);
+  const caption = buildIgCaption(club);
 
   // copia sempre a legenda para a área de transferência — é a parte que o
   // Instagram nunca aceita por partilha automática, por isso fica pronta a colar.
@@ -1841,7 +1862,9 @@ async function shareToInstagram(club, id) {
     const file = new File([blob], 'desafios100.jpg', { type: 'image/jpeg' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], text: caption, title: 'Desafios 100%' });
-      setShareHint('Legenda também copiada — cola-a se a app de destino não a mostrar (comum no Instagram do iPhone).');
+      showMsg(msgId, '✓ Ecrã de partilha aberto.', 'ok');
+      howtoEl.innerHTML = buildIgHowto(club, 'native');
+      howtoEl.style.display = 'block';
       return;
     }
   } catch (e) { /* segue para o fallback de download */ }
@@ -1851,7 +1874,9 @@ async function shareToInstagram(club, id) {
   a.href = imgUrl;
   a.download = 'desafios100.jpg';
   a.click();
-  setShareHint('Legenda copiada e foto guardada — abre o Instagram, escolhe esta foto e cola a legenda.');
+  showMsg(msgId, '✓ Foto guardada e legenda copiada.', 'ok');
+  howtoEl.innerHTML = buildIgHowto(club, 'download');
+  howtoEl.style.display = 'block';
 }
 
 // ══════════════════════════════════════
