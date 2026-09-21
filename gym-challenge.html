@@ -601,7 +601,8 @@
     <div class="card">
       <h2>Semana do Desafio</h2>
       <div class="small" style="margin-top:0;">Segunda 21/09 a Domingo 27/09/2026. Cada dia mostra o somatório de tempo de TODOS os participantes de cada clube, por desafio. Esse tempo total acumula ao longo da semana toda — vence o clube com o somatório de tempo mais baixo no fim da semana.</div>
-      <label>Dia selecionado para a TV</label>
+      <label>Dia selecionado (para Pódio, Reset e Gerir Resultados, abaixo)</label>
+      <div class="small" style="margin-top:0;">Não afeta o que aparece na aba pública "Resultados" — essa tem o seu próprio seletor de dia, independente deste.</div>
       <div class="day-strip" id="admin-day-strip"></div>
     </div>
 
@@ -635,6 +636,25 @@
     </div>
 
     <div class="card">
+      <h2>➕ Lançar Resultado (Staff)</h2>
+      <div class="small" style="margin-top:0;">Para o professor registar um resultado num dia diferente do dia atual (ex.: esqueceu-se de lançar ontem). Só aparece aqui, na área protegida por PIN — as abas públicas "Lançar" continuam a registar sempre para o dia de hoje.</div>
+      <div id="admin-manual-msg" class="msg"></div>
+      <label>Clube</label>
+      <select id="admin-manual-club">
+        <option value="a">M. Martins</option>
+        <option value="b">Terrugem</option>
+      </select>
+      <label>Desafio</label>
+      <select id="admin-manual-challenge" onchange="renderAdminManualValueField()"></select>
+      <label>Dia</label>
+      <select id="admin-manual-day"></select>
+      <label>Nome do Participante</label>
+      <input type="text" id="admin-manual-name" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">
+      <div id="admin-manual-value-field"></div>
+      <button class="btn btn-green" style="margin-top:14px;" onclick="submitManualResult()">Registar Resultado</button>
+    </div>
+
+    <div class="card">
       <h2>Nomes dos Clubes</h2>
       <label>M. Martins (vermelho)</label>
       <input type="text" id="club-a-name" value="M. Martins" oninput="saveClubNames()">
@@ -652,6 +672,12 @@
       <h2>Reset</h2>
       <label>Apagar resultados de um desafio no dia selecionado</label>
       <div id="admin-reset-btns"><p class="empty-note">Sem resultados no dia selecionado.</p></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 Gerir Resultados</h2>
+      <div class="small" style="margin-top:0;">Corrigir, desclassificar ou eliminar um resultado do dia selecionado acima (em "Semana do Desafio"). Só acessível aqui, com PIN — não aparece nas abas públicas "Lançar".</div>
+      <div id="admin-manage-results"><p class="empty-note">Sem resultados no dia selecionado.</p></div>
     </div>
 
     <div class="card">
@@ -811,6 +837,17 @@ function todayStr() {
 }
 function dayInfo(dateStr) {
   return WEEK_DAYS.find(w => w.date === dateStr) || WEEK_DAYS[0];
+}
+// Dia mostrado na aba pública "Resultados" — por defeito o dia real de hoje,
+// exatamente como em "Lançar". É local a este dispositivo (não fica gravado
+// no Firebase nem em localStorage), para que cada pessoa possa navegar por
+// outro dia ou "TOTAL" sem isso mudar o que os outros veem, e sem interferir
+// com o "Dia selecionado" do painel Desafios (que serve só para as ações de
+// admin: pódio, reset e gerir resultados).
+let resultsDay = todayStr();
+function selectResultsDay(date) {
+  resultsDay = date;
+  renderAll();
 }
 function dayDisplay(dateStr) {
   if (dateStr === 'TOTAL') return 'Total da Semana (Seg–Dom)';
@@ -1253,6 +1290,126 @@ function renderAdmin(s) {
       `).join('');
     }
   }
+
+  renderAdminManageResults(s);
+  renderAdminManualForm(s);
+}
+
+// Lista, dentro do admin (PIN), todos os resultados do dia selecionado —
+// com o único botão de editar/desclassificar/eliminar que existe na app.
+// De propósito NÃO existe equivalente nas abas públicas "Lançar", para que
+// só quem tem o PIN possa alterar ou apagar o resultado de outra pessoa.
+function renderAdminManageResults(s) {
+  const container = document.getElementById('admin-manage-results');
+  if (!container) return;
+  if (s.tvDay === 'TOTAL') {
+    container.innerHTML = '<p class="empty-note">Escolhe um dia específico (não a aba TOTAL) para gerir resultados.</p>';
+    return;
+  }
+  const clubName = c => c === 'a' ? s.clubNames.a : s.clubNames.b;
+  const rows = [];
+  s.challenges.forEach(ch => {
+    (s.results[ch.id] || []).filter(r => r.day === s.tvDay).forEach(r => rows.push({ r, ch }));
+  });
+  rows.sort((x, y) => y.r.ts - x.r.ts);
+  if (rows.length === 0) {
+    container.innerHTML = `<p class="empty-note">Sem resultados em ${dayDisplay(s.tvDay)}.</p>`;
+    return;
+  }
+  container.innerHTML = rows.map(({ r, ch }) => `
+    <div class="lb-row" style="${r.disqualified ? 'opacity:.5;' : ''}">
+      <div class="lb-name" style="flex:1;${r.disqualified ? 'text-decoration:line-through;color:var(--dim);' : ''}">
+        ${r.name} <span style="color:var(--dim);font-size:11px;">· ${clubName(r.club)} · ${ch.name}</span>
+      </div>
+      <div class="lb-result" style="${r.disqualified ? 'color:#555;' : ''}">${r.disqualified ? '—' : displayValue(r.value, ch.unit)}</div>
+      <button onclick="openEditModal(${r.ts})" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════
+// LANÇAMENTO MANUAL (STAFF, DENTRO DO ADMIN)
+// Permite ao professor registar um resultado para QUALQUER dia da semana
+// (não só "hoje"), sem afetar o comportamento normal das abas "Lançar"
+// públicas, que continuam sempre fixas ao dia real atual.
+// ══════════════════════════════════════
+function renderAdminManualForm(s) {
+  const nameInput = document.getElementById('admin-manual-name');
+  // Não reconstrói nada enquanto a pessoa está a escrever/selecionar aqui,
+  // para não perder o que já preencheu a meio do redesenho a cada segundo.
+  if (document.activeElement === nameInput) return;
+
+  const challengeSelect = document.getElementById('admin-manual-challenge');
+  const daySelect = document.getElementById('admin-manual-day');
+  if (!challengeSelect || !daySelect) return;
+
+  const prevChallenge = challengeSelect.value;
+  const prevDay = daySelect.value;
+
+  if (s.challenges.length === 0) {
+    challengeSelect.innerHTML = '<option value="">Nenhum desafio criado ainda</option>';
+  } else {
+    challengeSelect.innerHTML = s.challenges.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    const stillExists = s.challenges.some(c => String(c.id) === prevChallenge);
+    challengeSelect.value = stillExists ? prevChallenge : String(s.challenges[0].id);
+  }
+
+  daySelect.innerHTML = WEEK_DAYS.map(w => `<option value="${w.date}">${w.label} ${w.date.split('-')[2]}/${w.date.split('-')[1]}</option>`).join('');
+  daySelect.value = WEEK_DAYS.some(w => w.date === prevDay) ? prevDay : todayStr();
+
+  renderAdminManualValueField();
+}
+
+function renderAdminManualValueField() {
+  const s = getState();
+  const challengeSelect = document.getElementById('admin-manual-challenge');
+  const field = document.getElementById('admin-manual-value-field');
+  if (!challengeSelect || !field) return;
+  const ch = s.challenges.find(c => String(c.id) === challengeSelect.value);
+  if (!ch) { field.innerHTML = ''; return; }
+  if (isTimeUnit(ch.unit)) {
+    field.innerHTML = `
+      <label>Minutos</label>
+      <input type="number" id="admin-manual-min" placeholder="0" min="0" style="margin-bottom:10px">
+      <label>Segundos</label>
+      <input type="number" id="admin-manual-sec" placeholder="0" min="0" max="59">`;
+  } else {
+    field.innerHTML = `
+      <label>Resultado (${ch.unit})</label>
+      <input type="number" id="admin-manual-val" placeholder="0" min="0" step="0.1">`;
+  }
+}
+
+function submitManualResult() {
+  const s = getState();
+  const club = document.getElementById('admin-manual-club').value;
+  const challengeId = parseInt(document.getElementById('admin-manual-challenge').value);
+  const day = document.getElementById('admin-manual-day').value;
+  const ch = s.challenges.find(c => c.id === challengeId);
+  if (!ch) { showMsg('admin-manual-msg', 'Escolhe um desafio válido.', 'err'); return; }
+  const nameInput = document.getElementById('admin-manual-name');
+  const name = nameInput.value.trim();
+  if (!name) { showMsg('admin-manual-msg', 'Insere o nome do participante.', 'err'); return; }
+
+  let value, displayStr;
+  if (isTimeUnit(ch.unit)) {
+    const mins = parseInt(document.getElementById('admin-manual-min').value) || 0;
+    const secs = parseInt(document.getElementById('admin-manual-sec').value) || 0;
+    if (secs > 59) { showMsg('admin-manual-msg', 'Segundos têm de ser entre 0 e 59.', 'err'); return; }
+    value = mins * 60 + secs;
+    displayStr = formatTime(value);
+  } else {
+    const valInput = document.getElementById('admin-manual-val');
+    value = parseFloat(valInput.value);
+    if (isNaN(value) || value < 0) { showMsg('admin-manual-msg', 'Insere um resultado válido.', 'err'); return; }
+    displayStr = value + ' ' + ch.unit;
+  }
+
+  if (!s.results[challengeId]) s.results[challengeId] = [];
+  s.results[challengeId].push({ name, club, value, day, ts: Date.now() });
+  setState(s);
+  showMsg('admin-manual-msg', '✓ ' + name + ' — ' + displayStr + ' (' + dayDisplay(day) + ')', 'ok');
+  nameInput.value = '';
+  renderAll();
 }
 
 function renderStaffPanel(s, club) {
@@ -1304,12 +1461,14 @@ function renderStaffPanel(s, club) {
     const dayResults = (s.results[ch.id] || []).filter(r => r.day === today && r.club === club);
     const active = [...dayResults].filter(r => !r.disqualified).sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
     const disq = dayResults.filter(r => r.disqualified);
+    // Sem botão de editar/eliminar aqui de propósito — esta é a vista pública
+    // "Lançar", sem PIN. Corrigir ou apagar um resultado só é possível dentro
+    // de "Desafios" (área com PIN), em "📋 Gerir Resultados".
     const renderRow = (r, rank, isDisq) => `
       <div class="lb-row" style="${isDisq ? 'opacity:.5;' : ''}">
         <div class="lb-rank ${rank === 0 && !isDisq ? 'gold' : ''}" style="${isDisq ? 'color:#555;font-size:13px;' : ''}">${isDisq ? 'DQ' : rank + 1}</div>
         <div class="lb-name" style="${isDisq ? 'text-decoration:line-through;color:var(--dim);' : ''}">${r.name}</div>
         <div class="lb-result" style="${isDisq ? 'color:#555;' : ''}">${isDisq ? '—' : displayValue(r.value, ch.unit)}</div>
-        <button onclick="openEditModal(${r.ts})" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
       </div>`;
     const lbHtml = dayResults.length === 0
       ? '<p class="empty-note">Sem resultados hoje.</p>'
@@ -1342,10 +1501,10 @@ function renderStaff(s) {
 }
 
 function renderTV(s) {
-  document.getElementById('tv-day-label').textContent = dayDisplay(s.tvDay);
+  document.getElementById('tv-day-label').textContent = dayDisplay(resultsDay);
 
   // score bar (day) — somatório de tempo, não pontos. Menor tempo = a ganhar.
-  const dt = dayTotals(s, s.tvDay);
+  const dt = dayTotals(s, resultsDay);
   const wt = weekTotals(s);
   const leadA = dt.aHas && dt.bHas && dt.a < dt.b;
   const leadB = dt.aHas && dt.bHas && dt.b < dt.a;
@@ -1365,14 +1524,16 @@ function renderTV(s) {
       <div class="score-val" style="color:var(--kawasaki-green);">${formatTime(dt.a + dt.b)}</div>
     </div>`;
 
+  // Dia clicável aqui (independente do "Dia selecionado" do painel Desafios) —
+  // é o próprio filtro local da aba Resultados, por defeito o dia de hoje.
   document.getElementById('tv-week-strip').innerHTML = WEEK_DAYS.map(w => {
     const d = wt.perDay.find(p => p.date === w.date);
-    const isToday = w.date === s.tvDay;
-    return `<div class="wd ${isToday ? 'today' : ''}">
+    const isSelected = w.date === resultsDay;
+    return `<div class="wd ${isSelected ? 'today' : ''}" style="cursor:pointer;" onclick="selectResultsDay('${w.date}')">
       <div class="wd-label">${w.short}</div>
       <div class="wd-score"><span style="color:var(--club-a)">${formatTime(d.a)}</span>-<span style="color:var(--club-b)">${formatTime(d.b)}</span></div>
     </div>`;
-  }).join('') + `<div class="wd" style="border-color:var(--kawasaki-green);${s.tvDay === 'TOTAL' ? 'background:rgba(255,212,0,.18);' : ''}">
+  }).join('') + `<div class="wd" style="border-color:var(--kawasaki-green);cursor:pointer;${resultsDay === 'TOTAL' ? 'background:rgba(255,212,0,.18);' : ''}" onclick="selectResultsDay('TOTAL')">
       <div class="wd-label" style="color:var(--kawasaki-green);">TOTAL SEMANA</div>
       <div class="wd-score"><span style="color:var(--club-a)">${formatTime(wt.a)}</span>-<span style="color:var(--club-b)">${formatTime(wt.b)}</span></div>
     </div>`;
@@ -1401,13 +1562,13 @@ function renderTV(s) {
     overlay.classList.remove('show');
   }
 
-  // body: leaderboards for challenges played on tvDay
+  // body: leaderboards for challenges played on resultsDay (filtro local desta aba)
   const body = document.getElementById('tv-body');
-  const played = challengesPlayedOnDay(s, s.tvDay);
+  const played = challengesPlayedOnDay(s, resultsDay);
 
   if (played.length === 0) {
     body.innerHTML = `<div class="tv-waiting">
-      <div class="tv-waiting-title">SEM RESULTADOS EM ${dayDisplay(s.tvDay).toUpperCase()}</div>
+      <div class="tv-waiting-title">SEM RESULTADOS EM ${dayDisplay(resultsDay).toUpperCase()}</div>
       <div class="pulse-dot"></div>
     </div>`;
     return;
@@ -1457,7 +1618,7 @@ function renderTV(s) {
       </div>`;
 
     const chCards = played.map(ch => {
-      const dayResults = (s.results[ch.id] || []).filter(r => matchesDay(r, s.tvDay) && !r.disqualified);
+      const dayResults = (s.results[ch.id] || []).filter(r => matchesDay(r, resultsDay) && !r.disqualified);
       const sorted = [...dayResults].sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
       const combinedSum = dayResults.reduce((sum, r) => sum + r.value, 0);
 
@@ -1543,7 +1704,7 @@ function renderTV(s) {
     </div>`;
 
   const chCards = played.map(ch => {
-    const clubResults = (s.results[ch.id] || []).filter(r => matchesDay(r, s.tvDay) && r.club === club);
+    const clubResults = (s.results[ch.id] || []).filter(r => matchesDay(r, resultsDay) && r.club === club);
     const active = clubResults.filter(r => !r.disqualified).sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
     const sumVal = active.reduce((sum, r) => sum + r.value, 0);
 
