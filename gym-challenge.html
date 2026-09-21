@@ -325,6 +325,11 @@
 
   /* photo grid */
   .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .photo-manage-thumb { position:relative; aspect-ratio: 1; border-radius: 10px; overflow:hidden; border: 2px solid var(--border); }
+  .photo-manage-thumb.a { border-color: var(--club-a); }
+  .photo-manage-thumb.b { border-color: var(--club-b); }
+  .photo-manage-thumb img { width:100%; height:100%; object-fit: cover; display:block; }
+  .photo-manage-del { position:absolute; top:4px; right:4px; width:26px; height:26px; border-radius:50%; background:rgba(0,0,0,.75); border:1px solid #5a1a1a; color:#ff6b6b; font-size:14px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
   .photo-thumb { position:relative; aspect-ratio: 1; border-radius: 10px; overflow:hidden; cursor:pointer; border: 2px solid var(--border); }
   .photo-thumb.a { border-color: var(--club-a); }
   .photo-thumb.b { border-color: var(--club-b); }
@@ -649,6 +654,12 @@
       <div id="admin-reset-btns"><p class="empty-note">Sem resultados no dia selecionado.</p></div>
     </div>
 
+    <div class="card">
+      <h2>🗑 Gerir Fotos</h2>
+      <div class="small" style="margin-top:0;">Todas as fotos do mural (M. Martins e Terrugem), mais recentes primeiro. Elimina as que não devam ficar visíveis.</div>
+      <div id="admin-photo-manage"><p class="empty-note">Sem fotos ainda.</p></div>
+    </div>
+
   </div>
 </div>
 
@@ -665,8 +676,12 @@
     <h2 style="color:var(--club-a);">📷 Foto — <span id="staff-photo-title-a">M. Martins</span></h2>
     <div class="small" style="margin-top:0;">Envia uma foto do momento para o mural do <b id="staff-photo-title-a2">M. Martins</b>, visível em Resultados → Fotos.</div>
     <div id="staff-photo-msg-a" class="msg"></div>
-    <label class="btn btn-red" for="staff-photo-input-a">📸 Adicionar foto — <span id="staff-photo-title-a3">M. Martins</span></label>
-    <input type="file" id="staff-photo-input-a" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'a')">
+    <div style="display:flex;gap:8px;">
+      <label class="btn btn-red" style="flex:1;" for="staff-photo-input-a-cam">📸 Tirar foto</label>
+      <label class="btn btn-red" style="flex:1;" for="staff-photo-input-a-lib">🖼️ Galeria/Ficheiros</label>
+    </div>
+    <input type="file" id="staff-photo-input-a-cam" accept="image/*" capture="environment" style="display:none;" onchange="onStaffFileChosen(event,'a')">
+    <input type="file" id="staff-photo-input-a-lib" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'a')">
     <button id="staff-photo-share-a" class="btn btn-green" style="display:none;margin-top:10px;" onclick="shareToInstagram('a', this.dataset.photoId)">📤 Partilhar no Instagram</button>
     <div id="staff-photo-howto-a" class="howto-share" style="display:none;"></div>
   </div>
@@ -685,8 +700,12 @@
     <h2 style="color:var(--club-b);">📷 Foto — <span id="staff-photo-title-b">Terrugem</span></h2>
     <div class="small" style="margin-top:0;">Envia uma foto do momento para o mural do <b id="staff-photo-title-b2">Terrugem</b>, visível em Resultados → Fotos.</div>
     <div id="staff-photo-msg-b" class="msg"></div>
-    <label class="btn btn-blue" for="staff-photo-input-b">📸 Adicionar foto — <span id="staff-photo-title-b3">Terrugem</span></label>
-    <input type="file" id="staff-photo-input-b" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'b')">
+    <div style="display:flex;gap:8px;">
+      <label class="btn btn-blue" style="flex:1;" for="staff-photo-input-b-cam">📸 Tirar foto</label>
+      <label class="btn btn-blue" style="flex:1;" for="staff-photo-input-b-lib">🖼️ Galeria/Ficheiros</label>
+    </div>
+    <input type="file" id="staff-photo-input-b-cam" accept="image/*" capture="environment" style="display:none;" onchange="onStaffFileChosen(event,'b')">
+    <input type="file" id="staff-photo-input-b-lib" accept="image/*" style="display:none;" onchange="onStaffFileChosen(event,'b')">
     <button id="staff-photo-share-b" class="btn btn-green" style="display:none;margin-top:10px;" onclick="shareToInstagram('b', this.dataset.photoId)">📤 Partilhar no Instagram</button>
     <div id="staff-photo-howto-b" class="howto-share" style="display:none;"></div>
   </div>
@@ -698,16 +717,21 @@
     <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.08em;color:var(--dim);margin-bottom:2px;">DESAFIOS 100% · FOTOS</div>
     <div id="upload-club-title" style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:.06em;"></div>
 
-    <label class="upload-file-label" id="upload-file-label" for="upload-file-input">
-      📸 Toca aqui para tirar ou escolher uma foto
-    </label>
-    <input type="file" id="upload-file-input" accept="image/*" style="display:none;" onchange="onUploadFileChosen(event)">
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <label class="upload-file-label" id="upload-file-label-cam" style="flex:1;padding:24px 10px;margin-top:0;" for="upload-file-input-cam">📸 Tirar foto</label>
+      <label class="upload-file-label" id="upload-file-label-lib" style="flex:1;padding:24px 10px;margin-top:0;" for="upload-file-input-lib">🖼️ Galeria/Ficheiros</label>
+    </div>
+    <input type="file" id="upload-file-input-cam" accept="image/*" capture="environment" style="display:none;" onchange="onUploadFileChosen(event)">
+    <input type="file" id="upload-file-input-lib" accept="image/*" style="display:none;" onchange="onUploadFileChosen(event)">
+    <div id="upload-file-status" class="upload-hint" style="display:none;">📸 Foto escolhida — pronta a enviar.</div>
     <img id="upload-preview" class="upload-photo-preview">
 
     <div id="upload-msg" class="msg" style="display:none;"></div>
 
     <button class="btn btn-green" id="upload-send-btn" style="margin-top:16px;display:none;" onclick="sendPhoto()">Enviar foto</button>
     <div class="upload-hint">A foto fica visível para todos em Resultados → 📷 Fotos, no ecrã do ginásio e na app.</div>
+    <button id="upload-share-btn" class="btn btn-green" style="display:none;margin-top:14px;" onclick="shareToInstagram(pendingSharePhoto.club, pendingSharePhoto.id, 'upload')">📤 Partilhar no Instagram</button>
+    <div id="upload-howto" class="howto-share" style="display:none;text-align:left;"></div>
   </div>
 </div>
 
@@ -1164,6 +1188,7 @@ function renderAll() {
   renderStaff(s);
   renderTV(s);
   renderPhotoGallery();
+  renderAdminPhotoManage();
 }
 
 function renderAdmin(s) {
@@ -1589,6 +1614,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzlWezt1NQuPG6
 let localTvPage = 'placar'; // só local a este dispositivo — não mexe no ecrã da TV de ninguém
 let pendingUploadClub = null;
 let pendingUploadDataUrl = null;
+let pendingSharePhoto = null; // { club, id } da última foto enviada por este ecrã, para o botão de partilha
 let lightboxCurrentUrl = null;
 let lightboxCurrentClub = null;
 let lightboxCurrentId = null;
@@ -1650,9 +1676,12 @@ function onUploadFileChosen(event) {
     const preview = document.getElementById('upload-preview');
     preview.src = dataUrl;
     preview.classList.add('show');
-    document.getElementById('upload-file-label').classList.add('has-file');
-    document.getElementById('upload-file-label').textContent = '📸 Trocar foto';
+    document.getElementById('upload-file-label-cam').classList.add('has-file');
+    document.getElementById('upload-file-label-lib').classList.add('has-file');
+    document.getElementById('upload-file-status').style.display = 'block';
     document.getElementById('upload-send-btn').style.display = 'block';
+    document.getElementById('upload-share-btn').style.display = 'none';
+    document.getElementById('upload-howto').style.display = 'none';
   }).catch(() => {
     showMsg('upload-msg', 'Não foi possível ler esta foto. Tenta outra.', 'err');
   });
@@ -1705,16 +1734,23 @@ async function sendPhoto() {
   btn.textContent = 'A enviar…';
 
   try {
-    await savePhotoRecord(pendingUploadClub, pendingUploadDataUrl);
+    const saved = await savePhotoRecord(pendingUploadClub, pendingUploadDataUrl);
     showMsg('upload-msg', '✓ Foto enviada! Obrigado.', 'ok');
+    // mesmo botão de partilha que existe na aba Lançar, agora também aqui — é o
+    // fluxo que os sócios realmente usam ao apontar ao QR do mural.
+    pendingSharePhoto = { club: pendingUploadClub, id: saved.id };
+    document.getElementById('upload-share-btn').style.display = 'block';
   } catch (e) {
     showMsg('upload-msg', 'Não foi possível enviar. Tenta novamente.', 'err');
   }
 
   document.getElementById('upload-preview').classList.remove('show');
-  document.getElementById('upload-file-label').classList.remove('has-file');
-  document.getElementById('upload-file-label').textContent = '📸 Toca aqui para tirar outra foto';
-  document.getElementById('upload-file-input').value = '';
+  document.getElementById('upload-file-label-cam').classList.remove('has-file');
+  document.getElementById('upload-file-label-lib').classList.remove('has-file');
+  document.getElementById('upload-file-status').style.display = 'none';
+  document.getElementById('upload-file-input-cam').value = '';
+  document.getElementById('upload-file-input-lib').value = '';
+  document.getElementById('upload-howto').style.display = 'none';
   btn.style.display = 'none';
   btn.disabled = false;
   btn.textContent = 'Enviar foto';
@@ -1735,6 +1771,7 @@ async function onStaffFileChosen(event, club) {
     const dataUrl = await compressImage(file);
     const saved = await savePhotoRecord(club, dataUrl);
     renderPhotoGallery();
+    renderAdminPhotoManage();
     showMsg(msgId, '✓ Foto adicionada ao mural.', 'ok');
     // mesmo botão de partilha que existe no mural (Resultados → Fotos), já disponível
     // aqui mesmo a seguir ao envio, sem a pessoa ter de ir procurar a foto lá.
@@ -1751,6 +1788,47 @@ function selectTvPage(page) {
   localTvPage = page;
   renderTV(getState());
   renderPhotoGallery();
+}
+
+// Lista de gestão de fotos no Admin — todas as fotos de ambos os clubes,
+// com botão de eliminar. Só é visível depois de entrar com o PIN (fica dentro
+// de #admin-content), mas é seguro chamar sempre: sem fotos, mostra a nota vazia.
+function renderAdminPhotoManage() {
+  const container = document.getElementById('admin-photo-manage');
+  if (!container) return;
+  const s = getState();
+  const photos = getPhotos();
+  const clubs = [{ key: 'a', name: s.clubNames.a }, { key: 'b', name: s.clubNames.b }];
+  const allEntries = [];
+  clubs.forEach(c => {
+    Object.keys(photos[c.key] || {}).forEach(id => {
+      allEntries.push({ club: c.key, id, ...photos[c.key][id] });
+    });
+  });
+  allEntries.sort((x, y) => y.ts - x.ts);
+
+  if (allEntries.length === 0) {
+    container.innerHTML = '<p class="empty-note">Sem fotos ainda.</p>';
+    return;
+  }
+  container.innerHTML = `<div class="photo-grid">` + allEntries.map(e => `
+    <div class="photo-manage-thumb ${e.club}">
+      <img src="${e.img}" loading="lazy">
+      <button class="photo-manage-del" onclick="deletePhoto('${e.club}','${e.id}')" title="Eliminar foto">✕</button>
+    </div>`).join('') + `</div>`;
+}
+
+async function deletePhoto(club, id) {
+  if (!confirm('Eliminar esta foto do mural? Não é possível desfazer.')) return;
+  const photos = getPhotos();
+  if (photos[club]) delete photos[club][id];
+  localStorage.setItem('gymChallengeWeekPhotos_v1', JSON.stringify(photos));
+  if (window.firebaseReady && window.fbSet) {
+    // set(path, null) remove mesmo o nó no Firebase, não só limpa localmente
+    window.fbSet('photosWeek/' + club + '/' + id, null);
+  }
+  renderPhotoGallery();
+  renderAdminPhotoManage();
 }
 
 function renderPhotoGallery() {
@@ -1840,13 +1918,14 @@ function buildIgHowto(club, shareResult) {
 // Lançar, logo a seguir a enviares a tua própria foto. O mural (Resultados →
 // Fotos) é só para ver — a partilha só está disponível para quem acabou de
 // carregar a foto, não para quem está só a ver o mural.
-async function shareToInstagram(club, id) {
+async function shareToInstagram(club, id, context) {
+  context = context || 'staff'; // 'staff' = aba Lançar; 'upload' = ecrã aberto pelo QR do mural
   const photos = getPhotos();
   const entry = photos[club] && photos[club][id];
   if (!entry) return;
   const imgUrl = entry.img;
-  const msgId = 'staff-photo-msg-' + club;
-  const howtoEl = document.getElementById('staff-photo-howto-' + club);
+  const msgId = context === 'upload' ? 'upload-msg' : 'staff-photo-msg-' + club;
+  const howtoEl = document.getElementById(context === 'upload' ? 'upload-howto' : 'staff-photo-howto-' + club);
 
   const caption = buildIgCaption(club);
 
