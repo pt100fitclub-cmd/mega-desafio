@@ -1325,7 +1325,7 @@ function renderStaffPanel(s, club) {
       </div>
       ${ch.desc ? `<div class="small" style="margin-top:-6px;">${ch.desc}</div>` : ''}
       <label>Nome do Participante</label>
-      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome completo" style="margin-bottom:12px;">
+      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">
       ${formHtml}
       <button class="btn ${club === 'a' ? 'btn-red' : 'btn-blue'}" style="margin-top:14px;" onclick="submitResult('${club}', ${ch.id})">Registar Resultado</button>
       <div style="margin-top:16px;">
