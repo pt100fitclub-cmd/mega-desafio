@@ -673,7 +673,7 @@
       <div id="admin-challenge-list"><p class="empty-note">Nenhum desafio criado ainda.</p></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="admin-manual-card">
       <h2>➕ Lançar Resultado (Staff)</h2>
       <div class="small" style="margin-top:0;">Para o professor registar um resultado num dia diferente do dia atual (ex.: esqueceu-se de lançar ontem). Só aparece aqui, na área protegida por PIN — as abas públicas "Lançar" continuam a registar sempre para o dia de hoje.</div>
       <div id="admin-manual-msg" class="msg"></div>
@@ -1435,10 +1435,13 @@ function renderAdminManageResults(s) {
 // públicas, que continuam sempre fixas ao dia real atual.
 // ══════════════════════════════════════
 function renderAdminManualForm(s) {
-  const nameInput = document.getElementById('admin-manual-name');
-  // Não reconstrói nada enquanto a pessoa está a escrever/selecionar aqui,
-  // para não perder o que já preencheu a meio do redesenho a cada segundo.
-  if (document.activeElement === nameInput) return;
+  // Não reconstrói NADA deste cartão (clube, desafio, dia, nome, valor) enquanto
+  // a pessoa estiver a usar qualquer campo dele — caso contrário o redesenho
+  // automático a cada segundo apaga o que está a meio de ser escrito/selecionado.
+  // (Isto inclui o campo de minutos/segundos/resultado, que antes era recriado
+  // do zero a cada segundo e perdia sempre o que lá tinha sido digitado.)
+  const card = document.getElementById('admin-manual-card');
+  if (card && document.activeElement && card.contains(document.activeElement)) return;
 
   const challengeSelect = document.getElementById('admin-manual-challenge');
   const daySelect = document.getElementById('admin-manual-day');
