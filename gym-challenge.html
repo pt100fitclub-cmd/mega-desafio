@@ -18,11 +18,35 @@
 
     window.fbSet = (path, data) => set(ref(db, path), data).catch(e => console.warn('Firebase write error:', e));
 
-    // Path "stateWeek" para não colidir com a app original (que usa "state")
+    // Path "stateWeek" para não colidir com a app original (que usa "state").
+    // Guarda config geral (desafios, nomes dos clubes, dia/pódio selecionados) —
+    // já NÃO inclui os resultados (ver "resultsWeek" abaixo), precisamente para
+    // que registar um resultado num dispositivo nunca reescreva/apague o que
+    // outro dispositivo acabou de gravar.
+    let migratedLegacyResults = false;
     onValue(ref(db, 'stateWeek'), (snap) => {
       const data = snap.val();
       if (data) {
         localStorage.setItem('gymChallengeWeek_v2', JSON.stringify(data));
+        // Migração única: versões anteriores desta app guardavam os resultados
+        // embutidos aqui dentro (stateWeek.results). Passa-os para o novo
+        // caminho "resultsWeek" (um sítio próprio por resultado), para não
+        // perder resultados já lançados antes desta correção. Usa um ID
+        // derivado do "ts" de cada resultado, por isso é seguro correr esta
+        // migração mais do que uma vez (em vários dispositivos): nunca duplica.
+        if (!migratedLegacyResults && data.results) {
+          migratedLegacyResults = true;
+          Object.keys(data.results).forEach(challengeId => {
+            (data.results[challengeId] || []).forEach(r => {
+              if (!r || !r.ts) return;
+              const legacyId = 'legacy' + r.ts;
+              const payload = { name: r.name, club: r.club, value: r.value, day: r.day, ts: r.ts };
+              if (r.disqualified) payload.disqualified = true;
+              set(ref(db, 'resultsWeek/' + challengeId + '/' + legacyId), payload)
+                .catch(e => console.warn('Falha a migrar resultado antigo:', e));
+            });
+          });
+        }
       } else {
         localStorage.removeItem('gymChallengeWeek_v2');
       }
@@ -38,6 +62,20 @@
         localStorage.setItem('gymChallengeWeekPhotos_v1', JSON.stringify(data));
       } else {
         localStorage.removeItem('gymChallengeWeekPhotos_v1');
+      }
+      if (typeof renderAll === 'function') renderAll();
+    });
+
+    // Path separado "resultsWeek/{challengeId}/{resultId}" — cada resultado
+    // individual tem o seu próprio sítio na base de dados (tal como as fotos),
+    // para que dois dispositivos possam registar resultados ao mesmo tempo
+    // sem um apagar o do outro.
+    onValue(ref(db, 'resultsWeek'), (snap) => {
+      const data = snap.val();
+      if (data) {
+        localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(data));
+      } else {
+        localStorage.removeItem('gymChallengeWeekResults_v1');
       }
       if (typeof renderAll === 'function') renderAll();
     });
@@ -811,7 +849,7 @@
     <div id="edit-modal-body"></div>
     <button onclick="saveEdit()" class="btn btn-green" style="margin-bottom:10px;">💾 Guardar Resultado</button>
     <button id="edit-modal-dq" onclick="toggleDQ()" class="btn" style="background:transparent;border:1px solid var(--border);margin-bottom:10px;"></button>
-    <button onclick="deleteResult(parseInt(document.getElementById('edit-modal').dataset.ts))" class="btn" style="background:transparent;border:1px solid #5a1a1a;color:#ff6b6b;">🗑 Eliminar</button>
+    <button onclick="deleteResult()" class="btn" style="background:transparent;border:1px solid #5a1a1a;color:#ff6b6b;">🗑 Eliminar</button>
   </div>
 </div>
 
@@ -891,23 +929,87 @@ function getLocalState() {
   const defaults = {
     challenges: SEED_CHALLENGES.map(c => Object.assign({}, c)),
     activeChallengeIds: SEED_CHALLENGES.map(c => c.id),
-    results: JSON.parse(JSON.stringify(SEED_RESULTS)), // challengeId -> [{name, club, value, day, ts, disqualified}]
     clubNames: { a: 'M. Martins', b: 'Terrugem' },
     tvDay: todayStr(),
     tvClubView: 'both',        // 'a' | 'b' | 'both' — que clube(s) a TV mostra
     winner: null               // {challengeId, challengeName, day, podium:[...]}
   };
+  let s;
   try {
     const raw = localStorage.getItem('gymChallengeWeek_v2');
     const parsed = raw ? JSON.parse(raw) : null;
-    return Object.assign({}, defaults, parsed || {});
+    s = Object.assign({}, defaults, parsed || {});
   } catch (e) {
-    return defaults;
+    s = Object.assign({}, defaults);
   }
+  // Os resultados NÃO vivem dentro deste objeto (ver setState) — cada um tem o
+  // seu próprio sítio na base de dados (ver "resultsWeek" no bloco Firebase, no
+  // topo do ficheiro), para nunca se sobreporem entre dispositivos. Aqui só se
+  // reconstrói s.results, no formato {challengeId: [resultado, ...]} que o
+  // resto da app espera, a partir desse cache local separado.
+  const resultsCache = getResultsCache();
+  s.results = {};
+  for (const ch of s.challenges) {
+    const bucket = resultsCache[ch.id] || {};
+    s.results[ch.id] = Object.keys(bucket).map(rid => Object.assign({ id: rid }, bucket[rid]));
+  }
+  return s;
 }
 function setState(s) {
-  localStorage.setItem('gymChallengeWeek_v2', JSON.stringify(s));
-  if (window.firebaseReady && window.fbSet) window.fbSet('stateWeek', s);
+  // "results" nunca é gravado aqui — ver saveResult/updateResult/deleteResultById.
+  const toSave = Object.assign({}, s);
+  delete toSave.results;
+  localStorage.setItem('gymChallengeWeek_v2', JSON.stringify(toSave));
+  if (window.firebaseReady && window.fbSet) window.fbSet('stateWeek', toSave);
+}
+
+// ── Resultados: cada um gravado individualmente, tal como as fotos ──
+function getResultsCache() {
+  try {
+    const raw = localStorage.getItem('gymChallengeWeekResults_v1');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function saveResult(challengeId, payload) {
+  const id = 'r' + Date.now() + Math.floor(Math.random() * 1000);
+  if (window.firebaseReady && window.fbSet) {
+    window.fbSet('resultsWeek/' + challengeId + '/' + id, payload);
+  }
+  // guarda também localmente já, para feedback imediato neste dispositivo
+  const cache = getResultsCache();
+  if (!cache[challengeId]) cache[challengeId] = {};
+  cache[challengeId][id] = payload;
+  localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(cache));
+  return Object.assign({ id }, payload);
+}
+function updateResult(challengeId, resultId, patch) {
+  const cache = getResultsCache();
+  const current = (cache[challengeId] && cache[challengeId][resultId]) || {};
+  const updated = Object.assign({}, current, patch);
+  if (window.firebaseReady && window.fbSet) {
+    window.fbSet('resultsWeek/' + challengeId + '/' + resultId, updated);
+  }
+  if (!cache[challengeId]) cache[challengeId] = {};
+  cache[challengeId][resultId] = updated;
+  localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(cache));
+}
+function deleteResultById(challengeId, resultId) {
+  if (window.firebaseReady && window.fbSet) {
+    window.fbSet('resultsWeek/' + challengeId + '/' + resultId, null);
+  }
+  const cache = getResultsCache();
+  if (cache[challengeId]) {
+    delete cache[challengeId][resultId];
+    localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(cache));
+  }
+}
+function deleteAllResultsForChallenge(challengeId) {
+  if (window.firebaseReady && window.fbSet) {
+    window.fbSet('resultsWeek/' + challengeId, null);
+  }
+  const cache = getResultsCache();
+  delete cache[challengeId];
+  localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(cache));
 }
 
 // ══════════════════════════════════════
@@ -1036,7 +1138,6 @@ function toggleActive(id) {
   const idx = s.activeChallengeIds.indexOf(id);
   if (idx >= 0) s.activeChallengeIds.splice(idx, 1);
   else s.activeChallengeIds.push(id);
-  if (!s.results[id]) s.results[id] = [];
   setState(s);
   renderAll();
 }
@@ -1045,7 +1146,7 @@ function deleteChallenge(id) {
   const s = getState();
   s.challenges = s.challenges.filter(c => c.id !== id);
   s.activeChallengeIds = s.activeChallengeIds.filter(cid => cid !== id);
-  delete s.results[id];
+  deleteAllResultsForChallenge(id);
   setState(s);
   renderAll();
 }
@@ -1099,8 +1200,11 @@ function resetDayResults(challengeId) {
   const s = getState();
   const ch = s.challenges.find(c => c.id === challengeId);
   if (!confirm(`Apagar todos os resultados de "${ch ? ch.name : ''}" no dia ${dayDisplay(s.tvDay)}?`)) return;
-  s.results[challengeId] = (s.results[challengeId] || []).filter(r => r.day !== s.tvDay);
-  setState(s);
+  // Apaga um a um, no sítio próprio de cada resultado — não mexe nos resultados
+  // de outros dias nem nos de outros desafios.
+  (s.results[challengeId] || []).filter(r => r.day === s.tvDay).forEach(r => {
+    deleteResultById(challengeId, r.id);
+  });
   renderAll();
 }
 
@@ -1127,9 +1231,7 @@ function submitResult(club, challengeId) {
     if (isNaN(value) || value < 0) { showMsg('staff-msg-' + club, 'Insere um resultado válido.', 'err'); return; }
     displayStr = value + ' ' + ch.unit;
   }
-  if (!s.results[challengeId]) s.results[challengeId] = [];
-  s.results[challengeId].push({ name, club, value, day: todayStr(), ts: Date.now() });
-  setState(s);
+  saveResult(challengeId, { name, club, value, day: todayStr(), ts: Date.now() });
   showMsg('staff-msg-' + club, '✓ ' + name + ' — ' + displayStr, 'ok');
   renderAll();
 }
@@ -1137,16 +1239,15 @@ function submitResult(club, challengeId) {
 // ══════════════════════════════════════
 // EDIT / DQ / DELETE (shared modal)
 // ══════════════════════════════════════
-function findResultByTs(s, ts) {
-  for (const c of s.challenges) {
-    const res = (s.results[c.id] || []).find(x => x.ts === ts);
-    if (res) return { r: res, ch: c };
-  }
-  return { r: null, ch: null };
+function findResultById(s, challengeId, resultId) {
+  const ch = s.challenges.find(c => c.id === challengeId);
+  if (!ch) return { r: null, ch: null };
+  const r = (s.results[challengeId] || []).find(x => x.id === resultId);
+  return { r: r || null, ch };
 }
-function openEditModal(ts) {
+function openEditModal(challengeId, resultId) {
   const s = getState();
-  const { r, ch } = findResultByTs(s, ts);
+  const { r, ch } = findResultById(s, challengeId, resultId);
   if (!r || !ch) return;
   const isTime = isTimeUnit(ch.unit);
   let valueFields = '';
@@ -1170,48 +1271,49 @@ function openEditModal(ts) {
   document.getElementById('edit-modal-body').innerHTML = valueFields;
   document.getElementById('edit-modal-dq').textContent = dqLabel;
   document.getElementById('edit-modal-dq').style.color = dqColor;
-  modal.dataset.ts = ts;
+  modal.dataset.challengeId = challengeId;
+  modal.dataset.resultId = resultId;
   modal.style.display = 'flex';
 }
 function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
 function saveEdit() {
   const modal = document.getElementById('edit-modal');
-  const ts = parseInt(modal.dataset.ts);
+  const challengeId = parseInt(modal.dataset.challengeId);
+  const resultId = modal.dataset.resultId;
   const s = getState();
-  const { r, ch } = findResultByTs(s, ts);
+  const { r, ch } = findResultById(s, challengeId, resultId);
   if (!r || !ch) return;
+  let value;
   if (isTimeUnit(ch.unit)) {
     const mins = parseInt(document.getElementById('modal-min').value) || 0;
     const secs = parseInt(document.getElementById('modal-sec').value) || 0;
     if (secs > 59) { alert('Segundos têm de ser entre 0 e 59.'); return; }
-    r.value = mins * 60 + secs;
+    value = mins * 60 + secs;
   } else {
-    const val = parseFloat(document.getElementById('modal-val').value);
-    if (isNaN(val) || val < 0) { alert('Resultado inválido.'); return; }
-    r.value = val;
+    value = parseFloat(document.getElementById('modal-val').value);
+    if (isNaN(value) || value < 0) { alert('Resultado inválido.'); return; }
   }
-  setState(s);
+  updateResult(challengeId, resultId, { value });
   closeEditModal();
   renderAll();
 }
 function toggleDQ() {
   const modal = document.getElementById('edit-modal');
-  const ts = parseInt(modal.dataset.ts);
+  const challengeId = parseInt(modal.dataset.challengeId);
+  const resultId = modal.dataset.resultId;
   const s = getState();
-  const { r } = findResultByTs(s, ts);
+  const { r } = findResultById(s, challengeId, resultId);
   if (!r) return;
-  r.disqualified = !r.disqualified;
-  setState(s);
+  updateResult(challengeId, resultId, { disqualified: !r.disqualified });
   closeEditModal();
   renderAll();
 }
-function deleteResult(ts) {
+function deleteResult() {
   if (!confirm('Apagar este resultado permanentemente?')) return;
-  const s = getState();
-  for (const c of s.challenges) {
-    if (s.results[c.id]) s.results[c.id] = s.results[c.id].filter(r => r.ts !== ts);
-  }
-  setState(s);
+  const modal = document.getElementById('edit-modal');
+  const challengeId = parseInt(modal.dataset.challengeId);
+  const resultId = modal.dataset.resultId;
+  deleteResultById(challengeId, resultId);
   closeEditModal();
   renderAll();
 }
@@ -1322,7 +1424,7 @@ function renderAdminManageResults(s) {
         ${r.name} <span style="color:var(--dim);font-size:11px;">· ${clubName(r.club)} · ${ch.name}</span>
       </div>
       <div class="lb-result" style="${r.disqualified ? 'color:#555;' : ''}">${r.disqualified ? '—' : displayValue(r.value, ch.unit)}</div>
-      <button onclick="openEditModal(${r.ts})" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
+      <button onclick="openEditModal(${ch.id}, '${r.id}')" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
     </div>`).join('');
 }
 
