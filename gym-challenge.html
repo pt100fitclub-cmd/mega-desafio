@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Desafios - Semana Europeia do Desporto -</title>
+<title>Desafios 100%</title>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -17,6 +17,9 @@
     const db = getDatabase(app);
 
     window.fbSet = (path, data) => set(ref(db, path), data).catch(e => console.warn('Firebase write error:', e));
+    // Igual ao fbSet, mas devolve true/false — para avisar o admin se a base de
+    // dados recusar a gravação (ex.: regras do Firebase), em vez de falhar em silêncio.
+    window.fbSetOk = (path, data) => set(ref(db, path), data).then(() => true).catch(e => { console.warn('Firebase write error:', e); return false; });
 
     // Path "stateWeek" para não colidir com a app original (que usa "state").
     // Guarda config geral (desafios, nomes dos clubes, dia/pódio selecionados) —
@@ -76,6 +79,20 @@
         localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(data));
       } else {
         localStorage.removeItem('gymChallengeWeekResults_v1');
+      }
+      if (typeof renderAll === 'function') renderAll();
+    });
+
+    // Path separado "editionsWeek" — edições (arquivo por mês/semana): lista com
+    // nome e datas, qual está ativa e a que edição pertence cada desafio.
+    // Vive à parte do "stateWeek" para nunca ser apagado por um dispositivo com
+    // a página antiga aberta, e para nunca mexer nos resultados já gravados.
+    onValue(ref(db, 'editionsWeek'), (snap) => {
+      const data = snap.val();
+      if (data) {
+        localStorage.setItem('gymChallengeWeekEditions_v1', JSON.stringify(data));
+      } else {
+        localStorage.removeItem('gymChallengeWeekEditions_v1');
       }
       if (typeof renderAll === 'function') renderAll();
     });
@@ -657,7 +674,7 @@
 
     <div class="card">
       <h2>📋 Gerir Resultados</h2>
-      <div class="small" style="margin-top:0;">Corrigir, desclassificar ou eliminar um resultado do dia selecionado (em "Semana do Desafio", mais abaixo). Só acessível aqui, com PIN — não aparece nas abas públicas "Lançar".</div>
+      <div class="small" style="margin-top:0;">Corrigir, desclassificar ou eliminar um resultado do dia selecionado (em "Dias da Edição", mais abaixo). Só acessível aqui, com PIN — não aparece nas abas públicas "Lançar".</div>
       <div id="admin-manage-results"><p class="empty-note">Sem resultados no dia selecionado.</p></div>
     </div>
 
@@ -665,6 +682,21 @@
       <h2>🗑 Gerir Fotos</h2>
       <div class="small" style="margin-top:0;">Todas as fotos do mural (M. Martins e Terrugem), mais recentes primeiro. Elimina as que não devam ficar visíveis.</div>
       <div id="admin-photo-manage"><p class="empty-note">Sem fotos ainda.</p></div>
+    </div>
+
+    <div class="card">
+      <h2>📅 Edições</h2>
+      <div class="small" style="margin-top:0;">Cada edição tem as suas datas (1 dia, 3 dias, uma semana…) e os seus desafios. Os desafios novos ficam na edição ativa. As edições anteriores ficam guardadas, sem apagar nada, e consultam-se em "Resultados".</div>
+      <div id="admin-edition-active"></div>
+      <div id="admin-edition-list"></div>
+      <h2 style="margin-top:18px;font-size:18px;">Nova edição</h2>
+      <label>Nome</label>
+      <input type="text" id="admin-new-edition-name" placeholder="Ex: Novembro 2026, Desafio de Natal…">
+      <label>Primeiro dia</label>
+      <input type="date" id="admin-new-edition-start">
+      <label>Último dia (o mesmo dia, se for só um)</label>
+      <input type="date" id="admin-new-edition-end">
+      <button class="btn btn-green" style="margin-top:10px;" onclick="createEdition()">+ Criar edição e torná-la ativa</button>
     </div>
 
     <div class="card">
@@ -708,10 +740,10 @@
     </div>
 
     <div class="card">
-      <h2>Semana do Desafio</h2>
-      <div class="small" style="margin-top:0;">Segunda 21/09 a Domingo 27/09/2026. Cada dia mostra o somatório de tempo de TODOS os participantes de cada clube, por desafio. Esse tempo total acumula ao longo da semana toda — vence o clube com o somatório de tempo mais baixo no fim da semana.</div>
+      <h2>Dias da Edição</h2>
+      <div class="small" style="margin-top:0;" id="admin-week-note">—</div>
       <label>Dia selecionado (para Pódio, Reset e Gerir Resultados, acima)</label>
-      <div class="small" style="margin-top:0;">Não afeta o que aparece na aba pública "Resultados" — essa tem o seu próprio seletor de dia, independente deste.</div>
+      <div class="small" style="margin-top:0;">Não afeta o que aparece na aba pública "Resultados" — essa tem o seu próprio seletor de dia, independente deste. Só mostra a edição ativa.</div>
       <div class="day-strip" id="admin-day-strip"></div>
     </div>
 
@@ -806,14 +838,15 @@
 <div id="view-tv" class="view">
   <div id="tv-screen">
     <div class="tv-header">
-      <div class="tv-title">DESAFIOS - SEMANA EUROPEIA DO DESPORTO -</div>
-      <div class="tv-sub" id="tv-day-label">Segunda 21/09</div>
+      <div class="tv-title" id="tv-title">DESAFIOS 100%</div>
+      <div class="tv-sub" id="tv-day-label">—</div>
       <div class="tv-page-tabs" id="tv-page-tabs">
         <div class="tv-page-tab" id="tv-page-tab-placar" onclick="selectTvPage('placar')">🏆 Placar</div>
         <div class="tv-page-tab" id="tv-page-tab-fotos" onclick="selectTvPage('fotos')">📷 Álbum de Fotos</div>
         <div class="tv-page-tab" id="tv-page-tab-acesso" onclick="selectTvPage('acesso')">🔗 Acesso</div>
       </div>
       <div id="tv-placar-header">
+        <div class="tv-page-tabs" id="tv-edition-bar" style="margin-top:12px;flex-wrap:wrap;display:none;"></div>
         <div class="tv-page-tabs" id="tv-results-mode-tabs" style="margin-top:12px;">
           <div class="tv-page-tab" id="tv-mode-tab-simple" onclick="selectResultsMode('simple')">Por Desafio</div>
           <div class="tv-page-tab" id="tv-mode-tab-combined" onclick="selectResultsMode('combined')">Total Desafios</div>
@@ -3172,26 +3205,147 @@ var qrcode = function() {
 
 <script>
 // ══════════════════════════════════════
-// SEMANA
+// EDIÇÕES (arquivo)
+// Cada edição tem um nome e um intervalo de datas (1 dia, 3 dias, uma semana...).
+// Cada desafio pertence a UMA edição. A edição "ativa" é onde se criam desafios e
+// se lançam resultados; as anteriores ficam só para consulta em "Resultados".
+// Nada é apagado ao criar uma edição nova.
 // ══════════════════════════════════════
-const WEEK_DAYS = [
-  { date: '2026-09-21', label: 'Segunda', short: '2ª' },
-  { date: '2026-09-22', label: 'Terça',   short: '3ª' },
-  { date: '2026-09-23', label: 'Quarta',  short: '4ª' },
-  { date: '2026-09-24', label: 'Quinta',  short: '5ª' },
-  { date: '2026-09-25', label: 'Sexta',   short: '6ª' },
-  { date: '2026-09-26', label: 'Sábado',  short: 'Sáb' },
-  { date: '2026-09-27', label: 'Domingo', short: 'Dom' }
-];
+const WD_LABEL = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const WD_SHORT = ['Dom', '2ª', '3ª', '4ª', '5ª', '6ª', 'Sáb'];
+const LEGACY_EDITION_ID = 'set-2026';      // Semana de 21 a 27/09/2026 (desafios A e B)
+const FIRST_NEW_EDITION_ID = 'out-31';     // 31/10/2026 (Grip da Morte, Nightmare Challenge)
+const LEGACY_CUTOFF_ID = Date.UTC(2026, 9, 1); // desafios criados antes de 1/out/2026 (o id é a data de criação)
+const DEFAULT_EDITIONS = {
+  'set-2026': { name: 'Setembro 2026', start: '2026-09-21', end: '2026-09-27', title: 'DESAFIOS - SEMANA EUROPEIA DO DESPORTO -' },
+  'out-31':   { name: '31 Outubro 2026', start: '2026-10-31', end: '2026-10-31' }
+};
+const DEFAULT_ACTIVE_EDITION = 'out-31';
+const DEFAULT_TV_TITLE = 'DESAFIOS 100%';
 
-function todayStr() {
+function parseISO(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ''));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+function isoOf(dt) { return dt.toISOString().slice(0, 10); }
+
+function getEditionsRaw() {
+  try {
+    const raw = localStorage.getItem('gymChallengeWeekEditions_v1');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function getEditionsData() {
+  const raw = getEditionsRaw() || {};
+  const list = Object.assign({}, DEFAULT_EDITIONS, raw.list || {});
+  const active = (raw.active && list[raw.active]) ? raw.active : DEFAULT_ACTIVE_EDITION;
+  return { list, active, assign: raw.assign || {} };
+}
+// Escreve UM campo (ex.: "list/e123", "active", "assign/1790...") — nunca o objeto
+// todo, para dois dispositivos nunca se sobreporem.
+function editionsWrite(path, value) {
+  const raw = getEditionsRaw() || {};
+  const parts = path.split('/');
+  let node = raw;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (typeof node[parts[i]] !== 'object' || node[parts[i]] === null) node[parts[i]] = {};
+    node = node[parts[i]];
+  }
+  if (value === null) delete node[parts[parts.length - 1]];
+  else node[parts[parts.length - 1]] = value;
+  try { localStorage.setItem('gymChallengeWeekEditions_v1', JSON.stringify(raw)); } catch (e) {}
+  if (window.firebaseReady && window.fbSetOk) {
+    window.fbSetOk('editionsWeek/' + path, value).then(ok => {
+      if (!ok) alert('Atenção: a base de dados recusou gravar as edições (regras do Firebase). A alteração só existe neste dispositivo e não aparece nos outros. Avisa quem gere o projeto Firebase.');
+    });
+  } else if (window.firebaseReady && window.fbSet) {
+    window.fbSet('editionsWeek/' + path, value);
+  }
+}
+function editionsArray() {
+  const d = getEditionsData();
+  return Object.keys(d.list).filter(id => /^[A-Za-z0-9_-]+$/.test(id) && d.list[id] && d.list[id].start && d.list[id].end)
+    .map(id => Object.assign({ id }, d.list[id]))
+    .sort((a, b) => (b.start || '').localeCompare(a.start || ''));   // mais recente primeiro
+}
+function getEdition(id) {
+  const d = getEditionsData();
+  const e = d.list[id] || d.list[d.active];
+  const realId = d.list[id] ? id : d.active;
+  return Object.assign({ id: realId }, e);
+}
+function activeEdition() { return getEdition(getEditionsData().active); }
+function editionIdOf(ch) {
+  const d = getEditionsData();
+  const a = d.assign[ch.id];
+  if (a && d.list[a]) return a;
+  return ch.id < LEGACY_CUTOFF_ID ? LEGACY_EDITION_ID : FIRST_NEW_EDITION_ID;
+}
+function editionDays(ed) {
+  const out = [];
+  if (!ed) return out;
+  let cur = parseISO(ed.start);
+  const end = parseISO(ed.end);
+  if (!cur || !end) return out;
+  let guard = 0;
+  while (cur <= end && guard++ < 62) {
+    const wd = cur.getUTCDay();
+    out.push({ date: isoOf(cur), label: WD_LABEL[wd], short: WD_SHORT[wd] });
+    cur = new Date(cur.getTime() + 86400000);
+  }
+  return out;
+}
+function editionRangeText(ed) {
+  const f = s => { const p = String(s).split('-'); return p[2] + '/' + p[1]; };
+  return ed.start === ed.end ? f(ed.start) + '/' + ed.start.slice(0, 4) : f(ed.start) + ' a ' + f(ed.end) + '/' + ed.end.slice(0, 4);
+}
+// Cópia do estado só com os desafios (e resultados dentro das datas) de UMA edição.
+// Só para desenhar — nunca se grava de volta (senão apagava as outras edições).
+function scopedState(s, ed) {
+  const ids = {};
+  const challenges = s.challenges.filter(c => editionIdOf(c) === ed.id);
+  challenges.forEach(c => { ids[c.id] = true; });
+  const results = {};
+  challenges.forEach(c => {
+    results[c.id] = (s.results[c.id] || []).filter(r => r.day && r.day >= ed.start && r.day <= ed.end);
+  });
+  return Object.assign({}, s, {
+    challenges,
+    activeChallengeIds: (s.activeChallengeIds || []).filter(id => ids[id]),
+    results
+  });
+}
+// Vista da edição ativa (admin e lançamento), com o "dia selecionado" sempre válido.
+function adminView() {
+  const s = getState();
+  const ed = activeEdition();
+  const v = scopedState(s, ed);
+  const days = editionDays(ed);
+  v.tvDay = (s.tvDay === 'TOTAL' || days.some(d => d.date === s.tvDay)) ? s.tvDay : todayStr();
+  return v;
+}
+
+function realToday() {
   const d = new Date();
   const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-  const str = `${y}-${m}-${day}`;
-  return WEEK_DAYS.some(w => w.date === str) ? str : WEEK_DAYS[0].date;
+  return `${y}-${m}-${day}`;
+}
+// Dia onde se regista "hoje": o dia real, se estiver dentro da edição ativa; se
+// não estiver, o dia da edição mais próximo (o ecrã de lançar avisa disso).
+function todayStr() {
+  const days = editionDays(activeEdition());
+  const t = realToday();
+  if (!days.length) return t;
+  if (days.some(w => w.date === t)) return t;
+  return t < days[0].date ? days[0].date : days[days.length - 1].date;
 }
 function dayInfo(dateStr) {
-  return WEEK_DAYS.find(w => w.date === dateStr) || WEEK_DAYS[0];
+  const dt = parseISO(dateStr);
+  if (!dt) return { date: String(dateStr), label: String(dateStr), short: '?' };
+  const wd = dt.getUTCDay();
+  return { date: dateStr, label: WD_LABEL[wd], short: WD_SHORT[wd] };
 }
 // Dia mostrado na aba pública "Resultados" — por defeito o dia real de hoje,
 // exatamente como em "Lançar". É local a este dispositivo (não fica gravado
@@ -3202,6 +3356,18 @@ function dayInfo(dateStr) {
 let resultsDay = todayStr();
 function selectResultsDay(date) {
   resultsDay = date;
+  renderAll();
+}
+// Edição que se está a ver na aba "Resultados" (local a este dispositivo). null =
+// acompanha sempre a edição ativa. Ao abrir uma edição anterior mostra-se o TOTAL.
+let viewEditionId = null;
+function viewEdition() {
+  return viewEditionId ? getEdition(viewEditionId) : activeEdition();
+}
+function selectViewEdition(id) {
+  const activeId = getEditionsData().active;
+  viewEditionId = (id === activeId) ? null : id;
+  resultsDay = (id === activeId) ? todayStr() : 'TOTAL';
   renderAll();
 }
 // Aba local (não sincronizada) da vista "Resultados": mostrar o total combinado
@@ -3219,7 +3385,7 @@ function selectResultsMode(mode) {
   renderAll();
 }
 function dayDisplay(dateStr) {
-  if (dateStr === 'TOTAL') return 'Total da Semana (Seg–Dom)';
+  if (dateStr === 'TOTAL') return 'Total da edição';
   const info = dayInfo(dateStr);
   const [, m, d] = info.date.split('-');
   return `${info.label} ${d}/${m}`;
@@ -3468,10 +3634,10 @@ function dayTotals(s, day) {
 }
 // Total da semana: soma de pontos de todos os dias (Segunda a Domingo). Mais
 // pontos = melhor, sempre — independentemente de quantos e que desafios entram.
-function weekTotals(s) {
+function weekTotals(s, days) {
   let a = 0, b = 0;
   const perDay = [];
-  for (const w of WEEK_DAYS) {
+  for (const w of days) {
     const t = dayTotals(s, w.date);
     perDay.push({ date: w.date, a: t.a, b: t.b });
     a += t.a; b += t.b;
@@ -3515,7 +3681,10 @@ function addChallenge() {
   }
   if (!reference || reference <= 0) { alert('Define um valor de referência maior que zero (usado para calcular pontos em totais combinados).'); return; }
   const s = getState();
-  s.challenges.push({ id: Date.now(), name, desc, unit, order, reference });
+  const newId = Date.now();
+  s.challenges.push({ id: newId, name, desc, unit, order, reference });
+  // O desafio pertence à edição ativa neste momento (gravado à parte, em "editionsWeek").
+  editionsWrite('assign/' + newId, getEditionsData().active);
   setState(s);
   document.getElementById('admin-challenge-name').value = '';
   document.getElementById('admin-challenge-desc').value = '';
@@ -3575,6 +3744,7 @@ function deleteChallenge(id) {
   s.challenges = s.challenges.filter(c => c.id !== id);
   s.activeChallengeIds = s.activeChallengeIds.filter(cid => cid !== id);
   deleteAllResultsForChallenge(id);
+  editionsWrite('assign/' + id, null);
   setState(s);
   renderAll();
 }
@@ -3611,16 +3781,17 @@ function selectSingleClub(club) {
 }
 function announcePodium(challengeId) {
   const s = getState();
-  const ch = s.challenges.find(c => c.id === challengeId);
+  const v = adminView();          // só a edição ativa, com o dia selecionado sempre válido
+  const ch = v.challenges.find(c => c.id === challengeId);
   if (!ch) return;
-  const dayResults = (s.results[challengeId] || []).filter(r => r.day === s.tvDay && !r.disqualified);
+  const dayResults = (v.results[challengeId] || []).filter(r => r.day === v.tvDay && !r.disqualified);
   if (dayResults.length === 0) { alert('Sem resultados válidos neste dia.'); return; }
   const sorted = [...dayResults].sort((a, b) => ch.order === 'desc' ? b.value - a.value : a.value - b.value);
   const top3 = sorted.slice(0, 3);
   s.winner = {
     challengeId,
     challengeName: ch.name,
-    day: s.tvDay,
+    day: v.tvDay,
     podium: top3.map(r => ({ club: r.club, name: r.name, displayValue: displayValue(r.value, ch.unit) }))
   };
   setState(s);
@@ -3637,12 +3808,13 @@ function closeWinner() {
   renderAll();
 }
 function resetDayResults(challengeId) {
-  const s = getState();
-  const ch = s.challenges.find(c => c.id === challengeId);
-  if (!confirm(`Apagar todos os resultados de "${ch ? ch.name : ''}" no dia ${dayDisplay(s.tvDay)}?`)) return;
+  const v = adminView();          // só a edição ativa
+  const ch = v.challenges.find(c => c.id === challengeId);
+  if (!ch || v.tvDay === 'TOTAL') return;
+  if (!confirm(`Apagar todos os resultados de "${ch.name}" no dia ${dayDisplay(v.tvDay)}?`)) return;
   // Apaga um a um, no sítio próprio de cada resultado — não mexe nos resultados
   // de outros dias nem nos de outros desafios.
-  (s.results[challengeId] || []).filter(r => r.day === s.tvDay).forEach(r => {
+  (v.results[challengeId] || []).filter(r => r.day === v.tvDay).forEach(r => {
     deleteResultById(challengeId, r.id);
   });
   renderAll();
@@ -3770,31 +3942,120 @@ function renderAll() {
   renderAdminPhotoManage();
 }
 
-function renderAdmin(s) {
-  // day strip (7 dias + aba TOTAL, que junta a semana toda)
+// ── Edições: criar / ativar / editar ──
+function validEditionInput(name, start, end) {
+  if (!name) return 'Dá um nome à edição.';
+  const a = parseISO(start), b = parseISO(end);
+  if (!a || !b) return 'Datas inválidas. Usa o formato AAAA-MM-DD.';
+  if (b < a) return 'O último dia não pode ser antes do primeiro.';
+  if ((b - a) / 86400000 > 60) return 'Uma edição não pode ter mais de 61 dias.';
+  return '';
+}
+function createEdition() {
+  const name = document.getElementById('admin-new-edition-name').value.trim();
+  const start = document.getElementById('admin-new-edition-start').value;
+  const end = document.getElementById('admin-new-edition-end').value || start;
+  const err = validEditionInput(name, start, end);
+  if (err) { alert(err); return; }
+  const range = editionRangeText({ start, end });
+  if (!confirm(`Criar a edição "${name}" (${range}) e torná-la a edição ativa?\n\nA edição atual fica guardada em "Resultados". Nada é apagado.`)) return;
+  const id = 'e' + Date.now();
+  editionsWrite('list/' + id, { name, start, end });
+  editionsWrite('active', id);
+  document.getElementById('admin-new-edition-name').value = '';
+  document.getElementById('admin-new-edition-start').value = '';
+  document.getElementById('admin-new-edition-end').value = '';
+  viewEditionId = null;
+  resultsDay = todayStr();
+  renderAll();
+}
+function setActiveEdition(id) {
+  const ed = getEdition(id);
+  if (!confirm(`Tornar "${ed.name}" a edição ativa?\n\nOs desafios novos e os lançamentos passam a ir para esta edição. Nada é apagado.`)) return;
+  editionsWrite('active', ed.id);
+  viewEditionId = null;
+  resultsDay = todayStr();
+  renderAll();
+}
+function editEdition(id) {
+  const ed = getEdition(id);
+  const name = prompt('Nome da edição:', ed.name);
+  if (name === null) return;
+  const start = prompt('Primeiro dia (AAAA-MM-DD):', ed.start);
+  if (start === null) return;
+  const end = prompt('Último dia (AAAA-MM-DD):', ed.end);
+  if (end === null) return;
+  const err = validEditionInput(name.trim(), start.trim(), end.trim());
+  if (err) { alert(err); return; }
+  const next = { name: name.trim(), start: start.trim(), end: end.trim() };
+  if (ed.title) next.title = ed.title;
+  if (next.start !== ed.start || next.end !== ed.end) {
+    if (!confirm('Mudar as datas muda os dias desta edição. Resultados gravados fora das novas datas deixam de contar nos totais (ficam listados em "Gerir Resultados", em "Fora das datas da edição", e não se perdem). Continuar?')) return;
+  }
+  editionsWrite('list/' + ed.id, next);
+  renderAll();
+}
+function renderAdminEditions(s, ed, days) {
+  const activeBox = document.getElementById('admin-edition-active');
+  const listBox = document.getElementById('admin-edition-list');
+  const note = document.getElementById('admin-week-note');
+  if (note) note.textContent = `Edição ativa: ${ed.name} (${editionRangeText(ed)}, ${days.length} dia${days.length === 1 ? '' : 's'}). Cada dia mostra o somatório de pontos de todos os participantes de cada clube, por desafio, e o total acumula ao longo da edição.`;
+  if (!activeBox || !listBox) return;
+  const nChallenges = id => s.challenges.filter(c => editionIdOf(c) === id).length;
+  activeBox.innerHTML = `<div class="challenge-item">
+      <div style="flex:1;">
+        <div class="challenge-item-name">${escapeHtml(ed.name)} <span class="badge badge-active" style="margin-left:6px;">ATIVA</span></div>
+        <div class="challenge-item-unit">${editionRangeText(ed)} · ${days.length} dia${days.length === 1 ? '' : 's'} · ${nChallenges(ed.id)} desafio${nChallenges(ed.id) === 1 ? '' : 's'}
+          <a href="#" onclick="event.preventDefault();editEdition('${ed.id}')" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
+        </div>
+      </div>
+    </div>`;
+  const others = editionsArray().filter(e => e.id !== ed.id);
+  listBox.innerHTML = others.length === 0 ? '' :
+    `<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:12px 0 4px;">Edições anteriores (arquivo)</div>` +
+    others.map(e => `<div class="challenge-item">
+      <div style="flex:1;">
+        <div class="challenge-item-name">${escapeHtml(e.name)}</div>
+        <div class="challenge-item-unit">${editionRangeText(e)} · ${nChallenges(e.id)} desafio${nChallenges(e.id) === 1 ? '' : 's'}
+          <a href="#" onclick="event.preventDefault();editEdition('${e.id}')" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
+        </div>
+      </div>
+      <button onclick="setActiveEdition('${e.id}')" class="btn btn-sm btn-ghost">Tornar ativa</button>
+    </div>`).join('');
+}
+
+function renderAdmin(sFull) {
+  // Tudo o que está abaixo (dias, desafios, pódio, reset, gerir resultados, lançar
+  // manual) trabalha SÓ com a edição ativa. As edições anteriores ficam em
+  // "Resultados" > edições anteriores, intactas.
+  const s = adminView();
+  const ed = activeEdition();
+  const edDays = editionDays(ed);
+  renderAdminEditions(sFull, ed, edDays);
+  // day strip (dias da edição ativa + aba TOTAL)
   const strip = document.getElementById('admin-day-strip');
-  strip.innerHTML = WEEK_DAYS.map(w => {
+  strip.innerHTML = edDays.map(w => {
     const [, m, d] = w.date.split('-');
     const hasData = s.challenges.some(c => (s.results[c.id] || []).some(r => r.day === w.date));
     return `<div class="day-pill ${w.date === s.tvDay ? 'selected' : ''} ${hasData ? 'has-data' : ''}" onclick="selectTvDay('${w.date}')">
       <span class="d-label">${w.short}</span><span class="d-date">${d}/${m}</span>
     </div>`;
   }).join('') + `<div class="day-pill ${s.tvDay === 'TOTAL' ? 'selected' : ''}" style="${s.tvDay === 'TOTAL' ? '' : 'border-color:var(--kawasaki-green);'}" onclick="selectTvDay('TOTAL')">
-      <span class="d-label" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">SEMANA</span><span class="d-date" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">TOTAL</span>
+      <span class="d-label" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">EDIÇÃO</span><span class="d-date" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">TOTAL</span>
     </div>`;
 
   // challenge list
   const list = document.getElementById('admin-challenge-list');
   if (s.challenges.length === 0) {
-    list.innerHTML = '<p class="empty-note">Nenhum desafio criado ainda.</p>';
+    list.innerHTML = '<p class="empty-note">Nenhum desafio nesta edição ainda. Cria um em "Configurar Desafios".</p>';
   } else {
     list.innerHTML = s.challenges.map(c => {
       const active = s.activeChallengeIds.includes(c.id);
       return `
       <div class="challenge-item">
         <div style="flex:1;">
-          <div class="challenge-item-name">${c.name}</div>
-          ${c.desc ? `<div style="font-size:12px;color:var(--dim);margin:2px 0;">${c.desc}</div>` : ''}
+          <div class="challenge-item-name">${escapeHtml(c.name)}</div>
+          ${c.desc ? `<div style="font-size:12px;color:var(--dim);margin:2px 0;">${escapeHtml(c.desc)}</div>` : ''}
           <div class="challenge-item-unit">${c.unit} · ${c.order === 'desc' ? 'mais é melhor' : 'menos é melhor'}
             <a href="#" onclick="event.preventDefault();toggleChallengeOrder(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
           </div>
@@ -3831,10 +4092,10 @@ function renderAdmin(s) {
       resetBtns.innerHTML = `<p class="empty-note">Sem resultados no dia ${dayDisplay(s.tvDay)}.</p>`;
     } else {
       podiumBtns.innerHTML = playedToday.map(c => `
-        <button class="btn btn-gold" style="margin-bottom:8px" onclick="announcePodium(${c.id})">🏆 Anunciar Pódio — ${c.name}</button>
+        <button class="btn btn-gold" style="margin-bottom:8px" onclick="announcePodium(${c.id})">🏆 Anunciar Pódio — ${escapeHtml(c.name)}</button>
       `).join('');
       resetBtns.innerHTML = playedToday.map(c => `
-        <button class="btn btn-ghost" style="margin-bottom:8px" onclick="resetDayResults(${c.id})">↺ Apagar resultados — ${c.name}</button>
+        <button class="btn btn-ghost" style="margin-bottom:8px" onclick="resetDayResults(${c.id})">↺ Apagar resultados — ${escapeHtml(c.name)}</button>
       `).join('');
     }
   }
@@ -3850,28 +4111,47 @@ function renderAdmin(s) {
 function renderAdminManageResults(s) {
   const container = document.getElementById('admin-manage-results');
   if (!container) return;
-  if (s.tvDay === 'TOTAL') {
-    container.innerHTML = '<p class="empty-note">Escolhe um dia específico (não a aba TOTAL) para gerir resultados.</p>';
-    return;
-  }
-  const clubName = c => c === 'a' ? s.clubNames.a : s.clubNames.b;
-  const rows = [];
-  s.challenges.forEach(ch => {
-    (s.results[ch.id] || []).filter(r => r.day === s.tvDay).forEach(r => rows.push({ r, ch }));
-  });
-  rows.sort((x, y) => y.r.ts - x.r.ts);
-  if (rows.length === 0) {
-    container.innerHTML = `<p class="empty-note">Sem resultados em ${dayDisplay(s.tvDay)}.</p>`;
-    return;
-  }
-  container.innerHTML = rows.map(({ r, ch }) => `
+  const clubName = c => escapeHtml(c === 'a' ? s.clubNames.a : s.clubNames.b);
+  const rowHtml = ({ r, ch }, showDay) => `
     <div class="lb-row" style="${r.disqualified ? 'opacity:.5;' : ''}">
       <div class="lb-name" style="flex:1;${r.disqualified ? 'text-decoration:line-through;color:var(--dim);' : ''}">
-        ${escapeHtml(r.name)} <span style="color:var(--dim);font-size:11px;">· ${escapeHtml(clubName(r.club))} · ${escapeHtml(ch.name)}</span>
+        ${escapeHtml(r.name)} <span style="color:var(--dim);font-size:11px;">· ${clubName(r.club)} · ${escapeHtml(ch.name)}${showDay ? ' · ' + escapeHtml(r.day || 'sem data') : ''}</span>
       </div>
       <div class="lb-result" style="${r.disqualified ? 'color:#555;' : ''}">${r.disqualified ? '—' : displayValue(r.value, ch.unit)}</div>
       <button onclick="openEditModal(${ch.id}, '${r.id}')" style="background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px;flex-shrink:0;">✏️</button>
-    </div>`).join('');
+    </div>`;
+  let html = '';
+  if (s.tvDay === 'TOTAL') {
+    html += '<p class="empty-note">Escolhe um dia específico (não a aba TOTAL) para gerir resultados.</p>';
+  } else {
+    const rows = [];
+    s.challenges.forEach(ch => {
+      (s.results[ch.id] || []).filter(r => r.day === s.tvDay).forEach(r => rows.push({ r, ch }));
+    });
+    rows.sort((x, y) => y.r.ts - x.r.ts);
+    html += rows.length === 0
+      ? `<p class="empty-note">Sem resultados em ${dayDisplay(s.tvDay)}.</p>`
+      : rows.map(x => rowHtml(x, false)).join('');
+  }
+  // Resultados "fora de sítio": o dia gravado não cai dentro das datas da edição do
+  // desafio (ex.: um teste gravado com a data antiga). Não aparecem em nenhum dia
+  // nem nos totais, por isso listam-se aqui para poderem ser corrigidos/eliminados.
+  const full = getState();
+  const stray = [];
+  full.challenges.forEach(ch => {
+    const ed = getEdition(editionIdOf(ch));
+    (full.results[ch.id] || []).forEach(r => {
+      if (!r.day || r.day < ed.start || r.day > ed.end) stray.push({ r, ch });
+    });
+  });
+  if (stray.length) {
+    stray.sort((x, y) => y.r.ts - x.r.ts);
+    html += `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--club-a);margin-bottom:6px;">Fora das datas da edição (${stray.length}) — não contam nos totais</div>
+      ${stray.map(x => rowHtml(x, true)).join('')}
+    </div>`;
+  }
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════
@@ -3897,21 +4177,22 @@ function renderAdminManualForm(s) {
   const prevDay = daySelect.value;
 
   if (s.challenges.length === 0) {
-    challengeSelect.innerHTML = '<option value="">Nenhum desafio criado ainda</option>';
+    challengeSelect.innerHTML = '<option value="">Nenhum desafio nesta edição ainda</option>';
   } else {
-    challengeSelect.innerHTML = s.challenges.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    challengeSelect.innerHTML = s.challenges.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
     const stillExists = s.challenges.some(c => String(c.id) === prevChallenge);
     challengeSelect.value = stillExists ? prevChallenge : String(s.challenges[0].id);
   }
 
-  daySelect.innerHTML = WEEK_DAYS.map(w => `<option value="${w.date}">${w.label} ${w.date.split('-')[2]}/${w.date.split('-')[1]}</option>`).join('');
-  daySelect.value = WEEK_DAYS.some(w => w.date === prevDay) ? prevDay : todayStr();
+  const manualDays = editionDays(activeEdition());
+  daySelect.innerHTML = manualDays.map(w => `<option value="${w.date}">${w.label} ${w.date.split('-')[2]}/${w.date.split('-')[1]}</option>`).join('');
+  daySelect.value = manualDays.some(w => w.date === prevDay) ? prevDay : todayStr();
 
   renderAdminManualValueField();
 }
 
 function renderAdminManualValueField() {
-  const s = getState();
+  const s = adminView();
   const challengeSelect = document.getElementById('admin-manual-challenge');
   const field = document.getElementById('admin-manual-value-field');
   if (!challengeSelect || !field) return;
@@ -3931,7 +4212,7 @@ function renderAdminManualValueField() {
 }
 
 function submitManualResult() {
-  const s = getState();
+  const s = adminView();
   const club = document.getElementById('admin-manual-club').value;
   const challengeId = parseInt(document.getElementById('admin-manual-challenge').value);
   const day = document.getElementById('admin-manual-day').value;
@@ -3955,9 +4236,10 @@ function submitManualResult() {
     displayStr = value + ' ' + ch.unit;
   }
 
-  if (!s.results[challengeId]) s.results[challengeId] = [];
-  s.results[challengeId].push({ name, club, value, day, ts: Date.now() });
-  setState(s);
+  // Cada resultado tem o seu próprio sítio na base de dados (saveResult). Antes,
+  // empurrar para s.results e chamar setState NÃO gravava nada (setState ignora
+  // "results") — o resultado perdia-se ao recarregar.
+  saveResult(challengeId, { name, club, value, day, ts: Date.now() });
   showMsg('admin-manual-msg', '✓ ' + name + ' — ' + displayStr + ' (' + dayDisplay(day) + ')', 'ok');
   nameInput.value = '';
   renderAll();
@@ -3970,7 +4252,12 @@ function renderStaffPanel(s, club) {
   const title = document.getElementById('staff-title-' + club);
   if (title) title.textContent = 'Lançar — ' + clubName;
   const dayNote = document.getElementById('staff-day-' + club);
-  if (dayNote) dayNote.textContent = 'A registar para hoje: ' + dayDisplay(todayStr());
+  if (dayNote) {
+    const tdy = todayStr(), real = realToday();
+    dayNote.textContent = tdy === real
+      ? 'A registar para hoje: ' + dayDisplay(tdy)
+      : 'Hoje (' + real.split('-').reverse().slice(0, 2).join('/') + ') está fora das datas da edição ativa — a registar em ' + dayDisplay(tdy);
+  }
 
   ['staff-photo-title-' + club, 'staff-photo-title-' + club + '2', 'staff-photo-title-' + club + '3'].forEach(id => {
     const el = document.getElementById(id);
@@ -4046,13 +4333,30 @@ function renderStaffPanel(s, club) {
   }).join('');
 }
 
-function renderStaff(s) {
+function renderStaff(sFull) {
+  const s = scopedState(sFull, activeEdition());
   renderStaffPanel(s, 'a');
   renderStaffPanel(s, 'b');
 }
 
-function renderTV(s) {
-  document.getElementById('tv-day-label').textContent = dayDisplay(resultsDay);
+function renderTV(sFull) {
+  // Edição que se está a ver (por defeito a ativa) — só os desafios e resultados dela.
+  const viewEd = viewEdition();
+  const edDays = editionDays(viewEd);
+  const s = scopedState(sFull, viewEd);
+  const activeEdId = getEditionsData().active;
+  if (resultsDay !== 'TOTAL' && !edDays.some(d => d.date === resultsDay)) {
+    resultsDay = (viewEd.id === activeEdId) ? todayStr() : 'TOTAL';
+  }
+  const titleEl = document.getElementById('tv-title');
+  if (titleEl) titleEl.textContent = viewEd.title || DEFAULT_TV_TITLE;
+  document.getElementById('tv-day-label').textContent = viewEd.name + ' · ' + dayDisplay(resultsDay);
+  const edBar = document.getElementById('tv-edition-bar');
+  if (edBar) {
+    const eds = editionsArray();
+    edBar.style.display = eds.length > 1 ? 'flex' : 'none';
+    edBar.innerHTML = eds.map(e => `<div class="tv-page-tab ${e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${e.id === activeEdId ? '★ ' : ''}${escapeHtml(e.name)}</div>`).join('');
+  }
   const body = document.getElementById('tv-body');
   const modeTabCombined = document.getElementById('tv-mode-tab-combined');
   const modeTabSimple = document.getElementById('tv-mode-tab-simple');
@@ -4073,7 +4377,7 @@ function renderTV(s) {
   }
 
   const dt = dayTotals(s, resultsDay);
-  const wt = weekTotals(s);
+  const wt = weekTotals(s, edDays);
   const leadA = dt.aHas && dt.bHas && dt.a > dt.b;
   const leadB = dt.aHas && dt.bHas && dt.b > dt.a;
 
@@ -4119,35 +4423,9 @@ function renderTV(s) {
   const isResolved = !!resultsMode && (clubScopeMode === 'total' || (clubScopeMode === 'single' && !!selectedSingleClub));
 
   const weekStripEl = document.getElementById('tv-week-strip');
+  // O pódio anunciado aparece SEMPRE, mesmo antes de escolher Por Desafio/Clubes
+  // (fica antes do 'return' de baixo, para não ficar escondido).
   const overlay = document.getElementById('winner-overlay');
-  if (!isResolved) {
-    if (weekStripEl) weekStripEl.innerHTML = '';
-    overlay.classList.remove('show');
-    let hint = 'Escolhe "Por Desafio" ou "Total Desafios" para começar.';
-    if (resultsMode && !clubScopeMode) hint = 'Escolhe "Por Clube" ou "Total Clubes".';
-    if (resultsMode && clubScopeMode === 'single' && !selectedSingleClub) hint = `Escolhe ${escapeHtml(s.clubNames.a)} ou ${escapeHtml(s.clubNames.b)}.`;
-    body.innerHTML = `<div class="tv-waiting">
-      <div class="tv-waiting-title">${hint.toUpperCase()}</div>
-      <div class="pulse-dot"></div>
-    </div>`;
-    return;
-  }
-
-  // Dia clicável aqui (independente do "Dia selecionado" do painel Desafios) —
-  // é o próprio filtro local da aba Resultados, por defeito o dia de hoje.
-  document.getElementById('tv-week-strip').innerHTML = WEEK_DAYS.map(w => {
-    const d = wt.perDay.find(p => p.date === w.date);
-    const isSelected = w.date === resultsDay;
-    return `<div class="wd ${isSelected ? 'today' : ''}" style="cursor:pointer;" onclick="selectResultsDay('${w.date}')">
-      <div class="wd-label">${w.short}</div>
-      <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(d.a)}</span>-<span style="color:var(--club-b)">${formatPoints(d.b)}</span></div>
-    </div>`;
-  }).join('') + `<div class="wd" style="border-color:var(--kawasaki-green);cursor:pointer;${resultsDay === 'TOTAL' ? 'background:rgba(255,212,0,.18);' : ''}" onclick="selectResultsDay('TOTAL')">
-      <div class="wd-label" style="color:var(--kawasaki-green);">TOTAL SEMANA</div>
-      <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(wt.a)}</span>-<span style="color:var(--club-b)">${formatPoints(wt.b)}</span></div>
-    </div>`;
-
-  // winner overlay
   if (s.winner && s.winner.podium) {
     overlay.classList.add('show');
     document.getElementById('winner-challenge-name').textContent = s.winner.challengeName + ' · ' + dayDisplay(s.winner.day);
@@ -4170,12 +4448,38 @@ function renderTV(s) {
     overlay.classList.remove('show');
   }
 
+  if (!isResolved) {
+    if (weekStripEl) weekStripEl.innerHTML = '';
+    let hint = 'Escolhe "Por Desafio" ou "Total Desafios" para começar.';
+    if (resultsMode && !clubScopeMode) hint = 'Escolhe "Por Clube" ou "Total Clubes".';
+    if (resultsMode && clubScopeMode === 'single' && !selectedSingleClub) hint = `Escolhe ${s.clubNames.a} ou ${s.clubNames.b}.`;
+    body.innerHTML = `<div class="tv-waiting">
+      <div class="tv-waiting-title">${escapeHtml(hint.toUpperCase())}</div>
+      <div class="pulse-dot"></div>
+    </div>`;
+    return;
+  }
+
+  // Dia clicável aqui (independente do "Dia selecionado" do painel Desafios) —
+  // é o próprio filtro local da aba Resultados, por defeito o dia de hoje.
+  document.getElementById('tv-week-strip').innerHTML = edDays.map(w => {
+    const d = wt.perDay.find(p => p.date === w.date);
+    const isSelected = w.date === resultsDay;
+    return `<div class="wd ${isSelected ? 'today' : ''}" style="cursor:pointer;" onclick="selectResultsDay('${w.date}')">
+      <div class="wd-label">${w.short}</div>
+      <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(d.a)}</span>-<span style="color:var(--club-b)">${formatPoints(d.b)}</span></div>
+    </div>`;
+  }).join('') + `<div class="wd" style="border-color:var(--kawasaki-green);cursor:pointer;${resultsDay === 'TOTAL' ? 'background:rgba(255,212,0,.18);' : ''}" onclick="selectResultsDay('TOTAL')">
+      <div class="wd-label" style="color:var(--kawasaki-green);">TOTAL${edDays.length > 1 ? ' EDIÇÃO' : ''}</div>
+      <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(wt.a)}</span>-<span style="color:var(--club-b)">${formatPoints(wt.b)}</span></div>
+    </div>`;
+
   // body: leaderboards for challenges played on resultsDay (filtro local desta aba)
   const played = challengesPlayedOnDay(s, resultsDay);
 
   if (played.length === 0) {
     body.innerHTML = `<div class="tv-waiting">
-      <div class="tv-waiting-title">SEM RESULTADOS EM ${dayDisplay(resultsDay).toUpperCase()}</div>
+      <div class="tv-waiting-title">SEM RESULTADOS EM ${escapeHtml(dayDisplay(resultsDay).toUpperCase())}</div>
       <div class="pulse-dot"></div>
     </div>`;
     return;
@@ -4207,7 +4511,7 @@ function renderTV(s) {
     const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
       <div class="tv-athlete-total-card">
         <div class="tv-athlete-total-title" style="color:var(--kawasaki-green);display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-          <span>TOTAL POR ATLETA (SOMA DE PONTOS · SEMANA TODA) · INTERCLUBES</span>
+          <span>TOTAL POR ATLETA (SOMA DE PONTOS · EDIÇÃO TODA) · INTERCLUBES</span>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
             <span class="tv-ch-result-badge" style="color:var(--kawasaki-green);background:rgba(255,212,0,.12);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
@@ -4296,7 +4600,7 @@ function renderTV(s) {
   const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
     <div class="tv-athlete-total-card">
       <div class="tv-athlete-total-title" style="display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-        <span>TOTAL POR ATLETA (SOMA DE PONTOS · SEMANA TODA) · POR CLUBE</span>
+        <span>TOTAL POR ATLETA (SOMA DE PONTOS · EDIÇÃO TODA) · POR CLUBE</span>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
           ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
           <span class="tv-ch-result-badge" style="color:${clubColor};background:rgba(255,255,255,.06);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
