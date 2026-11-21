@@ -4575,7 +4575,7 @@ function renderStaff(sFull) {
 function renderTV(sFull) {
   // Edição que se está a ver (por defeito a ativa) — só os desafios e resultados dela.
   const allEds = editionsArray();
-  const viewEd = viewAllEditions ? { id: 'ALL', name: 'Todos os Desafios', start: allEds.length ? allEds[allEds.length - 1].start : '', end: '' } : viewEdition();
+  const viewEd = viewAllEditions ? { id: 'ALL', name: 'Total Geral', start: allEds.length ? allEds[allEds.length - 1].start : '', end: '' } : viewEdition();
   const edDays = viewAllEditions ? [] : editionDays(viewEd);
   const s = viewAllEditions ? scopedAllState(sFull) : scopedState(sFull, viewEd);
   const activeEdId = getEditionsData().active;
@@ -4593,7 +4593,7 @@ function renderTV(sFull) {
   if (edBar) {
     edBar.style.display = allEds.length > 1 ? 'flex' : 'none';
     edBar.innerHTML = allEds.map(e => `<div class="tv-page-tab ${!viewAllEditions && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${editionPillLabel(e, e.id === activeEdId)}</div>`).join('') +
-      `<div class="tv-page-tab ${viewAllEditions ? 'selected' : ''}" style="min-width:120px;flex-basis:100%;border-color:var(--kawasaki-green);" onclick="selectAllEditions()"><div>Σ Todos os Desafios</div><div style="font-size:.72em;opacity:.7;letter-spacing:.04em;margin-top:2px;">Total geral de todas as edições</div></div>`;
+      `<div class="tv-page-tab ${viewAllEditions ? 'selected' : ''}" style="min-width:120px;border-color:var(--kawasaki-green);color:var(--kawasaki-green);" onclick="selectAllEditions()"><div>Σ Total Geral</div><div style="font-size:.72em;opacity:.7;letter-spacing:.04em;margin-top:2px;">Todas as edições</div></div>`;
   }
   const body = document.getElementById('tv-body');
   const modeTabCombined = document.getElementById('tv-mode-tab-combined');
@@ -4764,7 +4764,7 @@ function renderTV(sFull) {
     const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
       <div class="tv-athlete-total-card">
         <div class="tv-athlete-total-title" style="color:var(--kawasaki-green);display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-          <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · EDIÇÃO TODA) · INTERCLUBES</span>
+          <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · ${viewAllEditions ? 'TODAS AS EDIÇÕES' : 'EDIÇÃO TODA'}) · INTERCLUBES</span>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
             <span class="tv-ch-result-badge" style="color:var(--kawasaki-green);background:rgba(255,212,0,.12);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
@@ -4856,7 +4856,7 @@ function renderTV(sFull) {
   const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
     <div class="tv-athlete-total-card">
       <div class="tv-athlete-total-title" style="display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-        <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · EDIÇÃO TODA) · POR CLUBE</span>
+        <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · ${viewAllEditions ? 'TODAS AS EDIÇÕES' : 'EDIÇÃO TODA'}) · POR CLUBE</span>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
           ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
           <span class="tv-ch-result-badge" style="color:${clubColor};background:rgba(255,255,255,.06);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
