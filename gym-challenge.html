@@ -3468,7 +3468,29 @@ let viewEditionId = null;
 function viewEdition() {
   return viewEditionId ? getEdition(viewEditionId) : activeEdition();
 }
+// "Todos os Desafios": soma de todas as edições (local a este dispositivo).
+let viewAllEditions = false;
+function selectAllEditions() {
+  viewAllEditions = true;
+  resultsDay = 'TOTAL';
+  renderAll();
+}
+// Estado com TODOS os desafios de todas as edições (cada resultado só conta se
+// estiver dentro das datas da edição do seu desafio). Só para desenhar.
+function scopedAllState(s) {
+  const results = {};
+  const challenges = s.challenges.filter(c => !!getEditionsData().list[editionIdOf(c)]);
+  challenges.forEach(c => {
+    const ed = getEdition(editionIdOf(c));
+    results[c.id] = (s.results[c.id] || []).filter(r => r.day && r.day >= ed.start && r.day <= ed.end);
+  });
+  return Object.assign({}, s, { challenges, results, activeChallengeIds: [] });
+}
+function editionTotals(sFull, ed) {
+  return weekTotals(scopedState(sFull, ed), editionDays(ed));
+}
 function selectViewEdition(id) {
+  viewAllEditions = false;
   const activeId = getEditionsData().active;
   viewEditionId = (id === activeId) ? null : id;
   resultsDay = (id === activeId) ? todayStr() : 'TOTAL';
@@ -3953,6 +3975,7 @@ function athleteKey(ch, name) {
 // tempos / repetições do clube nesse dia ou na edição). Tempo e repetições não
 // se podem somar entre si, por isso aparece um valor por desafio.
 function rawTotalsLine(s, day, clubs) {
+  if (viewAllEditions) return ''; // no total geral há demasiados desafios para listar aqui
   const parts = [];
   for (const ch of s.challenges) {
     const rs = (s.results[ch.id] || []).filter(r => matchesDay(r, day) && !r.disqualified && clubs.includes(r.club));
@@ -4551,21 +4574,26 @@ function renderStaff(sFull) {
 
 function renderTV(sFull) {
   // Edição que se está a ver (por defeito a ativa) — só os desafios e resultados dela.
-  const viewEd = viewEdition();
-  const edDays = editionDays(viewEd);
-  const s = scopedState(sFull, viewEd);
+  const allEds = editionsArray();
+  const viewEd = viewAllEditions ? { id: 'ALL', name: 'Todos os Desafios', start: allEds.length ? allEds[allEds.length - 1].start : '', end: '' } : viewEdition();
+  const edDays = viewAllEditions ? [] : editionDays(viewEd);
+  const s = viewAllEditions ? scopedAllState(sFull) : scopedState(sFull, viewEd);
   const activeEdId = getEditionsData().active;
-  if (resultsDay !== 'TOTAL' && !edDays.some(d => d.date === resultsDay)) {
+  if (viewAllEditions) resultsDay = 'TOTAL';
+  else if (resultsDay !== 'TOTAL' && !edDays.some(d => d.date === resultsDay)) {
     resultsDay = (viewEd.id === activeEdId) ? todayStr() : 'TOTAL';
   }
   const titleEl = document.getElementById('tv-title');
   if (titleEl) titleEl.textContent = viewEd.title || viewEd.name;
-  document.getElementById('tv-day-label').textContent = editionMonth(viewEd) + ' · ' + dayDisplay(resultsDay);
+  const firstEd = allEds[allEds.length - 1], lastEd = allEds[0];
+  document.getElementById('tv-day-label').textContent = viewAllEditions
+    ? `${firstEd ? editionMonth(firstEd) : ''} a ${lastEd ? editionMonth(lastEd) : ''} · Total geral (${allEds.length} edições)`
+    : editionMonth(viewEd) + ' · ' + dayDisplay(resultsDay);
   const edBar = document.getElementById('tv-edition-bar');
   if (edBar) {
-    const eds = editionsArray();
-    edBar.style.display = eds.length > 1 ? 'flex' : 'none';
-    edBar.innerHTML = eds.map(e => `<div class="tv-page-tab ${e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${editionPillLabel(e, e.id === activeEdId)}</div>`).join('');
+    edBar.style.display = allEds.length > 1 ? 'flex' : 'none';
+    edBar.innerHTML = allEds.map(e => `<div class="tv-page-tab ${!viewAllEditions && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${editionPillLabel(e, e.id === activeEdId)}</div>`).join('') +
+      `<div class="tv-page-tab ${viewAllEditions ? 'selected' : ''}" style="min-width:120px;flex-basis:100%;border-color:var(--kawasaki-green);" onclick="selectAllEditions()"><div>Σ Todos os Desafios</div><div style="font-size:.72em;opacity:.7;letter-spacing:.04em;margin-top:2px;">Total geral de todas as edições</div></div>`;
   }
   const body = document.getElementById('tv-body');
   const modeTabCombined = document.getElementById('tv-mode-tab-combined');
@@ -4587,7 +4615,10 @@ function renderTV(sFull) {
   }
 
   const dt = dayTotals(s, resultsDay);
-  const wt = weekTotals(s, edDays);
+  const ptsLabel = resultsDay !== 'TOTAL' ? 'pontos do dia' : (viewAllEditions ? 'total geral' : 'total da edição');
+  let wt = weekTotals(s, edDays);
+  const edTotalsList = viewAllEditions ? allEds.slice().reverse().map(e => Object.assign({ e }, editionTotals(sFull, e))) : [];
+  if (viewAllEditions) wt = { a: edTotalsList.reduce((x, y) => x + y.a, 0), b: edTotalsList.reduce((x, y) => x + y.b, 0), perDay: [] };
   const leadA = dt.aHas && dt.bHas && dt.a > dt.b;
   const leadB = dt.aHas && dt.bHas && dt.b > dt.a;
 
@@ -4607,11 +4638,11 @@ function renderTV(sFull) {
       const showB = !selectedSingleClub || selectedSingleClub === 'b';
       scoreBarEl.innerHTML =
         (showA ? `<div class="score-card a ${leadA ? 'leading-a' : ''} ${selectedSingleClub === 'a' ? 'view-selected' : ''}" onclick="selectSingleClub('a')" style="cursor:pointer;">
-          <div><div class="score-name a">${escapeHtml(s.clubNames.a.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['a'])}</div>
+          <div><div class="score-name a">${escapeHtml(s.clubNames.a.toUpperCase())}</div><div class="score-sub">Por Clube · ${ptsLabel}</div>${rawTotalsLine(s, resultsDay, ['a'])}</div>
           <div class="score-val" style="color:var(--club-a);">${formatPoints(dt.a)}</div>
         </div>` : '') +
         (showB ? `<div class="score-card b ${leadB ? 'leading-b' : ''} ${selectedSingleClub === 'b' ? 'view-selected' : ''}" onclick="selectSingleClub('b')" style="cursor:pointer;">
-          <div><div class="score-name b">${escapeHtml(s.clubNames.b.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['b'])}</div>
+          <div><div class="score-name b">${escapeHtml(s.clubNames.b.toUpperCase())}</div><div class="score-sub">Por Clube · ${ptsLabel}</div>${rawTotalsLine(s, resultsDay, ['b'])}</div>
           <div class="score-val" style="color:var(--club-b);">${formatPoints(dt.b)}</div>
         </div>` : '');
     }
@@ -4621,7 +4652,7 @@ function renderTV(sFull) {
     if (showInterclubesCard) {
       viewTabsEl.innerHTML = `
         <div class="score-card hundred view-selected">
-          <div><div class="score-name" style="color:var(--kawasaki-green);">100%FITCLUB</div><div class="score-sub">Interclubes · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['a', 'b'])}</div>
+          <div><div class="score-name" style="color:var(--kawasaki-green);">100%FITCLUB</div><div class="score-sub">Interclubes · ${ptsLabel}</div>${rawTotalsLine(s, resultsDay, ['a', 'b'])}</div>
           <div class="score-val" style="color:var(--kawasaki-green);">${formatPoints(dt.a + dt.b)}</div>
         </div>`;
     }
@@ -4672,6 +4703,17 @@ function renderTV(sFull) {
 
   // Dia clicável aqui (independente do "Dia selecionado" do painel Desafios) —
   // é o próprio filtro local da aba Resultados, por defeito o dia de hoje.
+  if (viewAllEditions) {
+    // Barra de baixo: uma caixa por edição (clicar abre essa edição) + TOTAL GERAL
+    document.getElementById('tv-week-strip').innerHTML = edTotalsList.map(x => `
+      <div class="wd" style="cursor:pointer;" onclick="selectViewEdition('${x.e.id}')">
+        <div class="wd-label">${escapeHtml(x.e.name)}</div>
+        <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(x.a)}</span>-<span style="color:var(--club-b)">${formatPoints(x.b)}</span></div>
+      </div>`).join('') + `<div class="wd" style="border-color:var(--kawasaki-green);background:rgba(255,212,0,.18);">
+        <div class="wd-label" style="color:var(--kawasaki-green);">TOTAL GERAL</div>
+        <div class="wd-score"><span style="color:var(--club-a)">${formatPoints(wt.a)}</span>-<span style="color:var(--club-b)">${formatPoints(wt.b)}</span></div>
+      </div>`;
+  } else
   document.getElementById('tv-week-strip').innerHTML = edDays.map(w => {
     const d = wt.perDay.find(p => p.date === w.date);
     const isSelected = w.date === resultsDay;
