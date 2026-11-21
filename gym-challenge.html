@@ -131,6 +131,20 @@
     min-height: 100vh;
   }
 
+  /* Cabeçalho da app (igual ao estilo da app Apex): logótipo + nome, sempre visível */
+  .app-header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px;
+    background: var(--dark);
+    border-bottom: 3px solid var(--club-a);
+  }
+  .app-header .brand-logo { width: 96px; height: 76px; }
+  .app-title { font-family: 'Bebas Neue', sans-serif; font-size: 38px; letter-spacing: .04em; line-height: 1; color: var(--white); }
+  @media (max-width: 600px) {
+    .app-header { padding: 12px 16px; gap: 12px; }
+    .app-header .brand-logo { width: 76px; height: 61px; }
+    .app-title { font-size: 32px; }
+  }
   .nav {
     display: flex;
     gap: 0;
@@ -650,6 +664,14 @@
 </head>
 <body>
 
+<header class="app-header">
+  <div class="brand-logo" role="img" aria-label="100% FitClub"></div>
+  <div style="min-width:0;">
+    <div class="brand-kicker">100% FitClub</div>
+    <div class="app-title">Desafios 100%</div>
+  </div>
+</header>
+
 <nav class="nav">
   <button onclick="switchView('admin')"><div>⚙</div><div>Desafios</div></button>
   <button class="active" onclick="switchView('staffA')" id="nav-staffA"><div>🔴</div><div><span id="nav-label-a">M. Martins</span></div></button>
@@ -795,13 +817,7 @@
 <div id="view-staffA" class="view active">
   <div id="staff-msg-a" class="msg"></div>
   <div class="card" style="border-top:3px solid var(--club-a)">
-    <div class="brand-row" style="margin-bottom:10px;">
-      <div class="brand-logo" role="img" aria-label="100% FitClub"></div>
-      <div style="min-width:0;">
-        <div class="brand-kicker">100% FitClub</div>
-        <h2 id="staff-title-a" style="margin:0;">Lançar — M. Martins</h2>
-      </div>
-    </div>
+    <h2 id="staff-title-a">Lançar — M. Martins</h2>
     <div class="small" style="margin-top:0;" id="staff-day-a"></div>
   </div>
   <div id="staff-blocks-a"><p class="empty-note">Nenhum desafio ativo. Aguarda o admin ativar um desafio.</p></div>
@@ -825,13 +841,7 @@
 <div id="view-staffB" class="view">
   <div id="staff-msg-b" class="msg"></div>
   <div class="card" style="border-top:3px solid var(--club-b)">
-    <div class="brand-row" style="margin-bottom:10px;">
-      <div class="brand-logo" role="img" aria-label="100% FitClub"></div>
-      <div style="min-width:0;">
-        <div class="brand-kicker">100% FitClub</div>
-        <h2 id="staff-title-b" style="margin:0;">Lançar — Terrugem</h2>
-      </div>
-    </div>
+    <h2 id="staff-title-b">Lançar — Terrugem</h2>
     <div class="small" style="margin-top:0;" id="staff-day-b"></div>
   </div>
   <div id="staff-blocks-b"><p class="empty-note">Nenhum desafio ativo. Aguarda o admin ativar um desafio.</p></div>
@@ -879,14 +889,8 @@
 <div id="view-tv" class="view">
   <div id="tv-screen">
     <div class="tv-header">
-      <div class="brand-row">
-        <div class="brand-logo" role="img" aria-label="100% FitClub"></div>
-        <div style="min-width:0;">
-          <div class="brand-kicker">100% FitClub</div>
-          <div class="tv-title" id="tv-title">DESAFIOS 100%</div>
-          <div class="tv-sub" id="tv-day-label">—</div>
-        </div>
-      </div>
+      <div class="tv-title" id="tv-title">—</div>
+      <div class="tv-sub" id="tv-day-label">—</div>
       <div class="tv-page-tabs" id="tv-page-tabs">
         <div class="tv-page-tab" id="tv-page-tab-placar" onclick="selectTvPage('placar')">🏆 Placar</div>
         <div class="tv-page-tab" id="tv-page-tab-fotos" onclick="selectTvPage('fotos')">📷 Álbum de Fotos</div>
@@ -4491,8 +4495,8 @@ function renderTV(sFull) {
     resultsDay = (viewEd.id === activeEdId) ? todayStr() : 'TOTAL';
   }
   const titleEl = document.getElementById('tv-title');
-  if (titleEl) titleEl.textContent = viewEd.title || DEFAULT_TV_TITLE;
-  document.getElementById('tv-day-label').textContent = viewEd.name + ' · ' + dayDisplay(resultsDay);
+  if (titleEl) titleEl.textContent = viewEd.title || viewEd.name;
+  document.getElementById('tv-day-label').textContent = viewEd.title ? viewEd.name + ' · ' + dayDisplay(resultsDay) : dayDisplay(resultsDay);
   const edBar = document.getElementById('tv-edition-bar');
   if (edBar) {
     const eds = editionsArray();
