@@ -3310,8 +3310,8 @@ const LEGACY_EDITION_ID = 'set-2026';      // Semana de 21 a 27/09/2026 (desafio
 const FIRST_NEW_EDITION_ID = 'out-31';     // 31/10/2026 (Grip da Morte, Nightmare Challenge)
 const LEGACY_CUTOFF_ID = Date.UTC(2026, 9, 1); // desafios criados antes de 1/out/2026 (o id é a data de criação)
 const DEFAULT_EDITIONS = {
-  'set-2026': { name: 'Setembro 2026', start: '2026-09-21', end: '2026-09-27', title: 'DESAFIOS - SEMANA EUROPEIA DO DESPORTO -' },
-  'out-31':   { name: '31 Outubro 2026', start: '2026-10-31', end: '2026-10-31' }
+  'set-2026': { name: 'Início de Época', start: '2026-09-21', end: '2026-09-27' },
+  'out-31':   { name: 'Halloween', start: '2026-10-31', end: '2026-10-31' }
 };
 const DEFAULT_ACTIVE_EDITION = 'out-31';
 const DEFAULT_TV_TITLE = 'DESAFIOS 100%';
@@ -3390,6 +3390,16 @@ function editionDays(ed) {
     cur = new Date(cur.getTime() + 86400000);
   }
   return out;
+}
+// Mês da edição (a partir da data de início), ex.: "Outubro 2026".
+const PT_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function editionMonth(ed) {
+  const d = parseISO(ed && ed.start);
+  return d ? PT_MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear() : '';
+}
+// Botão de edição em 2 linhas: nome em cima, mês por baixo.
+function editionPillLabel(e, isActive) {
+  return `<div>${isActive ? '★ ' : ''}${escapeHtml(e.name)}</div><div style="font-size:.72em;opacity:.7;letter-spacing:.04em;margin-top:2px;">${editionMonth(e)}</div>`;
 }
 function editionRangeText(ed) {
   const f = s => { const p = String(s).split('-'); return p[2] + '/' + p[1]; };
@@ -4189,7 +4199,7 @@ function renderAdminEditions(s, ed, days) {
     `<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:12px 0 4px;">Edições anteriores (arquivo)</div>` +
     others.map(e => `<div class="challenge-item">
       <div style="flex:1;">
-        <div class="challenge-item-name">${escapeHtml(e.name)}</div>
+        <div class="challenge-item-name">${escapeHtml(e.name)} <span style="font-size:12px;color:var(--dim);font-weight:400;">· ${editionMonth(e)}</span></div>
         <div class="challenge-item-unit">${editionRangeText(e)} · ${nChallenges(e.id)} desafio${nChallenges(e.id) === 1 ? '' : 's'}
           <a href="#" onclick="event.preventDefault();editEdition('${e.id}')" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
         </div>
@@ -4550,12 +4560,12 @@ function renderTV(sFull) {
   }
   const titleEl = document.getElementById('tv-title');
   if (titleEl) titleEl.textContent = viewEd.title || viewEd.name;
-  document.getElementById('tv-day-label').textContent = viewEd.title ? viewEd.name + ' · ' + dayDisplay(resultsDay) : dayDisplay(resultsDay);
+  document.getElementById('tv-day-label').textContent = editionMonth(viewEd) + ' · ' + dayDisplay(resultsDay);
   const edBar = document.getElementById('tv-edition-bar');
   if (edBar) {
     const eds = editionsArray();
     edBar.style.display = eds.length > 1 ? 'flex' : 'none';
-    edBar.innerHTML = eds.map(e => `<div class="tv-page-tab ${e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${e.id === activeEdId ? '★ ' : ''}${escapeHtml(e.name)}</div>`).join('');
+    edBar.innerHTML = eds.map(e => `<div class="tv-page-tab ${e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectViewEdition('${e.id}')">${editionPillLabel(e, e.id === activeEdId)}</div>`).join('');
   }
   const body = document.getElementById('tv-body');
   const modeTabCombined = document.getElementById('tv-mode-tab-combined');
@@ -5157,7 +5167,7 @@ function renderAdminPhotoShare() {
   const sel = document.getElementById('admin-photo-edition');
   if (!sel) return;
   const eds = editionsArray();
-  const opts = `<option value="ALL">Todas as edições</option>` + eds.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  const opts = `<option value="ALL">Todas as edições</option>` + eds.map(e => `<option value="${e.id}">${escapeHtml(e.name)} — ${editionMonth(e)}</option>`).join('');
   if (sel.dataset.sig !== opts) {
     const prev = sel.value || getEditionsData().active;
     sel.innerHTML = opts; sel.dataset.sig = opts;
@@ -5277,7 +5287,7 @@ function renderPhotoGallery() {
     const edEntries = photoViewAll ? allEntries : allEntries.filter(e => photoEditionId(e) === viewEd.id);
     const barHtml = eds.length > 1 ? `<div class="tv-page-tabs" style="flex-wrap:wrap;margin:0 0 14px;">` +
       `<div class="tv-page-tab ${photoViewAll ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('ALL')">Todas</div>` +
-      eds.map(e => `<div class="tv-page-tab ${!photoViewAll && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('${e.id}')">${e.id === activeEdId ? '★ ' : ''}${escapeHtml(e.name)}</div>`).join('') +
+      eds.map(e => `<div class="tv-page-tab ${!photoViewAll && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('${e.id}')">${editionPillLabel(e, e.id === activeEdId)}</div>`).join('') +
       `</div>` : '';
     const countHtml = `<div style="font-size:12px;color:var(--dim);margin:0 0 10px;">${photoViewAll ? 'Todas as edições' : escapeHtml(viewEd.name)} · ${edEntries.length} foto${edEntries.length === 1 ? '' : 's'}</div>` +
       (!photoViewAll && viewEd.albumUrl && /^https:\/\//i.test(viewEd.albumUrl)
