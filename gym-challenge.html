@@ -3853,6 +3853,16 @@ function athleteKey(ch, name) {
   return String(name).split(' & ').map(n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim())
     .sort().join(' & ');
 }
+// Resultados: mostrar o resultado real (tempo / repetições) ao lado dos pontos.
+function ptsSmall(ch, value) {
+  if (!ch.reference) return '';
+  return `<div style="font-size:11px;opacity:.75;letter-spacing:.02em;margin-top:2px;">${formatPoints(pointsForResult(ch, value))}</div>`;
+}
+function partsLine(parts) {
+  if (!parts || !parts.length) return '';
+  const txt = parts.map(p => `${escapeHtml(p.ch.name)}: <b style="color:var(--text, #fff);">${displayValue(p.value, p.ch.unit)}</b> <span style="opacity:.7;">(${formatPoints(pointsForResult(p.ch, p.value))})</span>`).join(' · ');
+  return `<div style="font-size:11px;color:var(--dim);margin-top:3px;line-height:1.35;white-space:normal;">${txt}</div>`;
+}
 function togglePairs(id) {
   const s = getState();
   const ch = s.challenges.find(c => c.id === id);
@@ -4575,8 +4585,9 @@ function renderTV(sFull) {
         const rs = (s.results[ch.id] || []).filter(r => r.club === club && !r.disqualified);
         for (const r of rs) {
           const key = club + '|' + athleteKey(ch, r.name);
-          if (!athleteMap[key]) athleteMap[key] = { name: r.name, club, total: 0, challengeIds: new Set() };
+          if (!athleteMap[key]) athleteMap[key] = { name: r.name, club, total: 0, challengeIds: new Set(), parts: [] };
           athleteMap[key].total += pointsForResult(ch, r.value);
+          athleteMap[key].parts.push({ ch, value: r.value });
           athleteMap[key].challengeIds.add(ch.id);
         }
       }
@@ -4604,8 +4615,9 @@ function renderTV(sFull) {
           return `<div class="tv-lb-row club-${a.club}">
             <div class="tv-lb-rank">${i + 1}</div>
             <div style="flex:1;min-width:0;">
-              <div class="tv-lb-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.name)}</div>
+              <div class="tv-lb-name" style="white-space:normal;overflow-wrap:anywhere;line-height:1.2;">${escapeHtml(a.name)}</div>
               <div class="tv-lb-club-tag ${a.club}">${escapeHtml(clubName.toUpperCase())} · ${n === totalChallengeCount ? 'fez os ' + totalChallengeCount + ' desafios' : n + ' de ' + totalChallengeCount + ' desafios'}</div>
+              ${partsLine(a.parts)}
             </div>
             <div class="tv-lb-result" style="color:${clubColor};">${formatPoints(a.total)}</div>
           </div>`;
@@ -4625,10 +4637,10 @@ function renderTV(sFull) {
             return `<div class="tv-lb-row club-${r.club}">
               <div class="tv-lb-rank">${i + 1}</div>
               <div style="flex:1;min-width:0;">
-                <div class="tv-lb-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+                <div class="tv-lb-name" style="white-space:normal;overflow-wrap:anywhere;line-height:1.2;">${escapeHtml(r.name)}</div>
                 <div class="tv-lb-club-tag ${r.club}">${escapeHtml(clubName.toUpperCase())}</div>
               </div>
-              <div class="tv-lb-result" style="color:${clubColor};">${displayValue(r.value, ch.unit)}</div>
+              <div class="tv-lb-result" style="color:${clubColor};text-align:right;">${displayValue(r.value, ch.unit)}${ptsSmall(ch, r.value)}</div>
             </div>`;
           }).join('');
 
@@ -4669,8 +4681,9 @@ function renderTV(sFull) {
     const rs = (s.results[ch.id] || []).filter(r => r.club === club && !r.disqualified);
     for (const r of rs) {
       const k = athleteKey(ch, r.name);
-      if (!athleteMap[k]) athleteMap[k] = { name: r.name, total: 0, challengeIds: new Set() };
+      if (!athleteMap[k]) athleteMap[k] = { name: r.name, total: 0, challengeIds: new Set(), parts: [] };
       athleteMap[k].total += pointsForResult(ch, r.value);
+      athleteMap[k].parts.push({ ch, value: r.value });
       athleteMap[k].challengeIds.add(ch.id);
     }
   }
@@ -4692,8 +4705,9 @@ function renderTV(sFull) {
         return `<div class="tv-lb-row club-${club}">
           <div class="tv-lb-rank">${i + 1}</div>
           <div style="flex:1;min-width:0;">
-            <div class="tv-lb-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.name)}</div>
+            <div class="tv-lb-name" style="white-space:normal;overflow-wrap:anywhere;line-height:1.2;">${escapeHtml(a.name)}</div>
             <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;">${n === totalChallengeCount ? 'fez os ' + totalChallengeCount + ' desafios' : n + ' de ' + totalChallengeCount + ' desafios'}</div>
+            ${partsLine(a.parts)}
           </div>
           <div class="tv-lb-result" style="color:${clubColor};">${formatPoints(a.total)}</div>
         </div>`;
@@ -4710,9 +4724,9 @@ function renderTV(sFull) {
       : active.map((r, i) => `<div class="tv-lb-row club-${club}">
           <div class="tv-lb-rank">${i + 1}</div>
           <div style="flex:1;min-width:0;">
-            <div class="tv-lb-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+            <div class="tv-lb-name" style="white-space:normal;overflow-wrap:anywhere;line-height:1.2;">${escapeHtml(r.name)}</div>
           </div>
-          <div class="tv-lb-result" style="color:${clubColor};">${displayValue(r.value, ch.unit)}</div>
+          <div class="tv-lb-result" style="color:${clubColor};text-align:right;">${displayValue(r.value, ch.unit)}${ptsSmall(ch, r.value)}</div>
         </div>`).join('');
 
     const globalBest = globalBestForChallenge(s, ch);
