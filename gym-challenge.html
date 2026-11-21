@@ -3922,10 +3922,22 @@ function openEditModal(challengeId, resultId) {
       <label>Resultado (${ch.unit})</label>
       <input type="number" id="modal-val" value="${r.value}" min="0" step="0.1">`;
   }
+  // Dia do resultado: só os dias da edição a que o desafio pertence. Se o dia
+  // gravado não for um deles (ex.: gravado com a data antiga), aparece marcado
+  // como "fora das datas" para se poder escolher o dia certo.
+  const edDaysForCh = editionDays(getEdition(editionIdOf(ch)));
+  const dayInEd = edDaysForCh.some(d => d.date === r.day);
+  const dayField = `
+      <label>Dia</label>
+      <select id="modal-day">
+        ${dayInEd ? '' : `<option value="${escapeHtml(r.day || '')}" selected>${escapeHtml(r.day ? dayDisplay(r.day) : 'sem data')} — fora das datas da edição</option>`}
+        ${edDaysForCh.map(d => `<option value="${d.date}" ${d.date === r.day ? 'selected' : ''}>${d.label} ${d.date.split('-')[2]}/${d.date.split('-')[1]}</option>`).join('')}
+      </select>`;
+  valueFields += dayField;
   const dqLabel = r.disqualified ? 'Reativar Resultado' : 'Desclassificar';
   const dqColor = r.disqualified ? '#2ecc71' : '#e6a817';
   const modal = document.getElementById('edit-modal');
-  document.getElementById('edit-modal-title').textContent = r.name + ' · ' + dayDisplay(r.day);
+  document.getElementById('edit-modal-title').textContent = r.name + ' · ' + (r.day ? dayDisplay(r.day) : 'sem data');
   document.getElementById('edit-modal-body').innerHTML = valueFields;
   document.getElementById('edit-modal-dq').textContent = dqLabel;
   document.getElementById('edit-modal-dq').style.color = dqColor;
@@ -3951,7 +3963,10 @@ function saveEdit() {
     value = parseFloat(document.getElementById('modal-val').value);
     if (isNaN(value) || value < 0) { alert('Resultado inválido.'); return; }
   }
-  updateResult(challengeId, resultId, { value });
+  const patch = { value };
+  const daySel = document.getElementById('modal-day');
+  if (daySel && daySel.value && daySel.value !== r.day) patch.day = daySel.value;
+  updateResult(challengeId, resultId, patch);
   closeEditModal();
   renderAll();
 }
