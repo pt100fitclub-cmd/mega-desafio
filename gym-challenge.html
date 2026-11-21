@@ -4965,7 +4965,7 @@ async function savePhotoRecord(club, dataUrl) {
     }
   }
 
-  const payload = { img: dataUrl, driveUrl, ts: Date.now(), source };
+  const payload = { img: dataUrl, driveUrl, ts: Date.now(), source, editionId: getEditionsData().active };
   if (window.firebaseReady && window.fbSet) {
     window.fbSet('photosWeek/' + club + '/' + id, payload);
   }
@@ -5082,6 +5082,34 @@ async function deletePhoto(club, id) {
 
 const APP_ACCESS_URL = 'https://pt100fitclub-cmd.github.io/mega-desafio/gym-challenge.html';
 
+// A que edição pertence uma foto: a que ficou gravada nela (fotos novas); nas
+// antigas, a edição cujas datas incluem o dia da foto; se nenhuma incluir, a
+// edição com datas mais próximas.
+function photoEditionId(photo) {
+  const d = getEditionsData();
+  if (photo.editionId && d.list[photo.editionId]) return photo.editionId;
+  const dt = new Date(photo.ts || 0);
+  const day = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  const eds = editionsArray();
+  const inside = eds.find(e => day >= e.start && day <= e.end);
+  if (inside) return inside.id;
+  let best = null, bestDist = Infinity;
+  const t0 = parseISO(day);
+  eds.forEach(e => {
+    const a = parseISO(e.start), b = parseISO(e.end);
+    if (!t0 || !a || !b) return;
+    const dist = t0 < a ? a - t0 : t0 - b;
+    if (dist < bestDist) { bestDist = dist; best = e.id; }
+  });
+  return best || d.active;
+}
+// Álbum: "Todas" mostra as fotos de todas as edições (local a este dispositivo).
+let photoViewAll = false;
+function selectPhotoEdition(id) {
+  if (id === 'ALL') { photoViewAll = true; renderAll(); return; }
+  photoViewAll = false;
+  selectViewEdition(id);
+}
 function renderPhotoGallery() {
   const tabPlacar = document.getElementById('tv-page-tab-placar');
   const tabFotos = document.getElementById('tv-page-tab-fotos');
@@ -5117,11 +5145,22 @@ function renderPhotoGallery() {
     });
     allEntries.sort((x, y) => y.ts - x.ts);
 
-    if (allEntries.length === 0) {
-      photosBody.innerHTML = `<div class="photo-empty">Sem fotos ainda. Usa "📷 Adicionar Foto" nas abas de Lançar para enviares a primeira.</div>`;
+    // Seletor de edição (o mesmo dos Resultados): só as fotos da edição escolhida.
+    const viewEd = viewEdition();
+    const activeEdId = getEditionsData().active;
+    const eds = editionsArray();
+    const edEntries = photoViewAll ? allEntries : allEntries.filter(e => photoEditionId(e) === viewEd.id);
+    const barHtml = eds.length > 1 ? `<div class="tv-page-tabs" style="flex-wrap:wrap;margin:0 0 14px;">` +
+      `<div class="tv-page-tab ${photoViewAll ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('ALL')">Todas</div>` +
+      eds.map(e => `<div class="tv-page-tab ${!photoViewAll && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('${e.id}')">${e.id === activeEdId ? '★ ' : ''}${escapeHtml(e.name)}</div>`).join('') +
+      `</div>` : '';
+    const countHtml = `<div style="font-size:12px;color:var(--dim);margin:0 0 10px;">${photoViewAll ? 'Todas as edições' : escapeHtml(viewEd.name)} · ${edEntries.length} foto${edEntries.length === 1 ? '' : 's'}</div>`;
+
+    if (edEntries.length === 0) {
+      photosBody.innerHTML = barHtml + countHtml + `<div class="photo-empty">Sem fotos nesta edição. Usa "📷 Adicionar Foto" nas abas de Lançar para enviares a primeira.</div>`;
       return;
     }
-    photosBody.innerHTML = `<div class="photo-grid">` + allEntries.map(e => `
+    photosBody.innerHTML = barHtml + countHtml + `<div class="photo-grid">` + edEntries.map(e => `
       <div class="photo-thumb ${e.club}" onclick="openLightbox('${e.club}','${e.id}')">
         <img src="${e.img}" loading="lazy">
       </div>`).join('') + `</div>`;
