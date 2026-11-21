@@ -344,6 +344,15 @@
   .score-name.b { color: var(--club-b); }
   .score-val { font-family:'Bebas Neue',sans-serif; font-size: 36px; line-height:1; }
   .score-sub { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  /* Cartões nunca saem do ecrã: o texto encolhe/quebra e os pontos ficam inteiros.
+     Em telemóvel os 2 clubes ficam um por baixo do outro, a toda a largura. */
+  .score-card { min-width: 0; gap: 10px; }
+  .score-card > div:first-child { min-width: 0; }
+  .score-val { flex-shrink: 0; white-space: nowrap; }
+  @media (max-width: 600px) {
+    .score-bar { flex-direction: column; gap: 6px; }
+    .score-val { font-size: 30px; }
+  }
 
   /* photo tab pills (dentro de Resultados) */
   .tv-page-tabs { display:flex; gap:8px; margin-top:14px; }
@@ -3854,6 +3863,20 @@ function athleteKey(ch, name) {
     .sort().join(' & ');
 }
 // Resultados: mostrar o resultado real (tempo / repetições) ao lado dos pontos.
+// Barras do topo: além dos pontos, o total "real" de cada desafio (soma dos
+// tempos / repetições do clube nesse dia ou na edição). Tempo e repetições não
+// se podem somar entre si, por isso aparece um valor por desafio.
+function rawTotalsLine(s, day, clubs) {
+  const parts = [];
+  for (const ch of s.challenges) {
+    const rs = (s.results[ch.id] || []).filter(r => matchesDay(r, day) && !r.disqualified && clubs.includes(r.club));
+    if (!rs.length) continue;
+    const sum = rs.reduce((acc, r) => acc + r.value, 0);
+    parts.push(`${escapeHtml(ch.name)}: <b>${displayValue(sum, ch.unit)}</b>`);
+  }
+  if (!parts.length) return '';
+  return `<div style="font-size:11px;color:var(--text, #fff);opacity:.85;margin-top:4px;line-height:1.35;white-space:normal;">${parts.join(' · ')}</div>`;
+}
 function ptsSmall(ch, value) {
   if (!ch.reference) return '';
   return `<div style="font-size:11px;opacity:.75;letter-spacing:.02em;margin-top:2px;">${formatPoints(pointsForResult(ch, value))}</div>`;
@@ -4487,11 +4510,11 @@ function renderTV(sFull) {
       const showB = !selectedSingleClub || selectedSingleClub === 'b';
       scoreBarEl.innerHTML =
         (showA ? `<div class="score-card a ${leadA ? 'leading-a' : ''} ${selectedSingleClub === 'a' ? 'view-selected' : ''}" onclick="selectSingleClub('a')" style="cursor:pointer;">
-          <div><div class="score-name a">${escapeHtml(s.clubNames.a.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div></div>
+          <div><div class="score-name a">${escapeHtml(s.clubNames.a.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['a'])}</div>
           <div class="score-val" style="color:var(--club-a);">${formatPoints(dt.a)}</div>
         </div>` : '') +
         (showB ? `<div class="score-card b ${leadB ? 'leading-b' : ''} ${selectedSingleClub === 'b' ? 'view-selected' : ''}" onclick="selectSingleClub('b')" style="cursor:pointer;">
-          <div><div class="score-name b">${escapeHtml(s.clubNames.b.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div></div>
+          <div><div class="score-name b">${escapeHtml(s.clubNames.b.toUpperCase())}</div><div class="score-sub">Por Clube · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['b'])}</div>
           <div class="score-val" style="color:var(--club-b);">${formatPoints(dt.b)}</div>
         </div>` : '');
     }
@@ -4501,7 +4524,7 @@ function renderTV(sFull) {
     if (showInterclubesCard) {
       viewTabsEl.innerHTML = `
         <div class="score-card hundred view-selected">
-          <div><div class="score-name" style="color:var(--kawasaki-green);">100%FITCLUB</div><div class="score-sub">Interclubes · pontos do dia</div></div>
+          <div><div class="score-name" style="color:var(--kawasaki-green);">100%FITCLUB</div><div class="score-sub">Interclubes · pontos do dia</div>${rawTotalsLine(s, resultsDay, ['a', 'b'])}</div>
           <div class="score-val" style="color:var(--kawasaki-green);">${formatPoints(dt.a + dt.b)}</div>
         </div>`;
     }
