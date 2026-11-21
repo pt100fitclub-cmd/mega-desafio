@@ -666,8 +666,12 @@
       <select id="admin-manual-challenge" onchange="renderAdminManualValueField()"></select>
       <label>Dia</label>
       <select id="admin-manual-day"></select>
-      <label>Nome do Participante</label>
+      <label id="admin-manual-name-label">Nome do Participante</label>
       <input type="text" id="admin-manual-name" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">
+      <div id="admin-manual-name2-wrap" style="display:none;">
+        <label>Nome do 2º elemento da dupla</label>
+        <input type="text" id="admin-manual-name2" placeholder="Nome + nº de sócio" style="margin-bottom:12px;">
+      </div>
       <div id="admin-manual-value-field"></div>
       <button class="btn btn-green" style="margin-top:14px;" onclick="submitManualResult()">Registar Resultado</button>
     </div>
@@ -713,6 +717,11 @@
         <option value="m">Metros</option>
         <option value="kg">Quilogramas</option>
         <option value="cal">Calorias</option>
+      </select>
+      <label>Participação</label>
+      <select id="admin-pairs">
+        <option value="0">Individual — 1 nome</option>
+        <option value="1">A pares — 2 nomes (a dupla conta como um resultado)</option>
       </select>
       <label>Ordenação (maior = melhor?)</label>
       <select id="admin-order" onchange="renderAdminNewChallengeRefField()">
@@ -3670,6 +3679,7 @@ function addChallenge() {
   const desc = document.getElementById('admin-challenge-desc').value.trim();
   const unit = document.getElementById('admin-unit').value;
   const order = document.getElementById('admin-order').value;
+  const pairs = document.getElementById('admin-pairs').value === '1';
   if (!name) { alert('Dá um nome ao desafio.'); return; }
   let reference;
   if (isTimeUnit(unit)) {
@@ -3682,12 +3692,15 @@ function addChallenge() {
   if (!reference || reference <= 0) { alert('Define um valor de referência maior que zero (usado para calcular pontos em totais combinados).'); return; }
   const s = getState();
   const newId = Date.now();
-  s.challenges.push({ id: newId, name, desc, unit, order, reference });
+  const newCh = { id: newId, name, desc, unit, order, reference };
+  if (pairs) newCh.pairs = true;
+  s.challenges.push(newCh);
   // O desafio pertence à edição ativa neste momento (gravado à parte, em "editionsWeek").
   editionsWrite('assign/' + newId, getEditionsData().active);
   setState(s);
   document.getElementById('admin-challenge-name').value = '';
   document.getElementById('admin-challenge-desc').value = '';
+  document.getElementById('admin-pairs').value = '0';
   renderAdminNewChallengeRefField();
   renderAll();
 }
@@ -3823,12 +3836,45 @@ function resetDayResults(challengeId) {
 // ══════════════════════════════════════
 // STAFF — lançamento
 // ══════════════════════════════════════
+// Desafios a pares: o resultado é da dupla. Os dois nomes ficam num só registo,
+// sempre pela mesma ordem (alfabética), para que "Ana & Rui" e "Rui & Ana" sejam
+// a mesma dupla nos totais de vários desafios.
+function pairName(n1, n2) {
+  const a = String(n1 || '').trim(), b = String(n2 || '').trim();
+  if (!a || !b) return '';
+  return [a, b].sort((x, y) => x.localeCompare(y, 'pt', { sensitivity: 'base' })).join(' & ');
+}
+// Chave para somar resultados da mesma pessoa/dupla nos totais. Nos desafios a
+// pares ignora maiúsculas/minúsculas, acentos e espaços a mais (ex.: "ana silva 7"
+// e "Ana Silva 7" são a mesma dupla). Nos desafios individuais fica como sempre
+// foi (nome exato), para não alterar os totais de edições anteriores.
+function athleteKey(ch, name) {
+  if (!ch || !ch.pairs) return String(name);
+  return String(name).split(' & ').map(n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim())
+    .sort().join(' & ');
+}
+function togglePairs(id) {
+  const s = getState();
+  const ch = s.challenges.find(c => c.id === id);
+  if (!ch) return;
+  const novo = !ch.pairs;
+  if (!confirm(`Mudar "${ch.name}" para ${novo ? 'A PARES (2 nomes)' : 'INDIVIDUAL (1 nome)'}?\n\nOs resultados já lançados não mudam.`)) return;
+  ch.pairs = novo;
+  setState(s);
+  renderAll();
+}
+
 function submitResult(club, challengeId) {
   const s = getState();
   const ch = s.challenges.find(c => c.id === challengeId);
   if (!ch) return;
   const nameInput = document.getElementById(`res-name-${club}-${challengeId}`);
-  const name = nameInput.value.trim();
+  let name = nameInput.value.trim();
+  if (ch.pairs) {
+    const n2 = document.getElementById(`res-name2-${club}-${challengeId}`);
+    name = pairName(name, n2 ? n2.value : '');
+    if (!name) { showMsg('staff-msg-' + club, 'Desafio a pares: insere os nomes dos dois elementos.', 'err'); return; }
+  }
   if (!name) { showMsg('staff-msg-' + club, 'Insere o nome do participante.', 'err'); return; }
   let value, displayStr;
   if (isTimeUnit(ch.unit)) {
@@ -4059,6 +4105,9 @@ function renderAdmin(sFull) {
           <div class="challenge-item-unit">${c.unit} · ${c.order === 'desc' ? 'mais é melhor' : 'menos é melhor'}
             <a href="#" onclick="event.preventDefault();toggleChallengeOrder(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
           </div>
+          <div class="challenge-item-unit" style="margin-top:2px;">${c.pairs ? '<b style="color:var(--kawasaki-green);">A pares (2 nomes)</b>' : 'Individual'}
+            <a href="#" onclick="event.preventDefault();togglePairs(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
+          </div>
           <div class="challenge-item-unit" style="margin-top:2px;">
             Referência: ${c.reference ? (isTimeUnit(c.unit) ? formatTime(c.reference) : c.reference + ' ' + c.unit) : '<span style="color:var(--club-a);">não definida — totais combinados ficam a 0 pts</span>'}
             <a href="#" onclick="event.preventDefault();editChallengeReference(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
@@ -4197,6 +4246,10 @@ function renderAdminManualValueField() {
   const field = document.getElementById('admin-manual-value-field');
   if (!challengeSelect || !field) return;
   const ch = s.challenges.find(c => String(c.id) === challengeSelect.value);
+  const wrap2 = document.getElementById('admin-manual-name2-wrap');
+  const lbl1 = document.getElementById('admin-manual-name-label');
+  if (wrap2) wrap2.style.display = (ch && ch.pairs) ? '' : 'none';
+  if (lbl1) lbl1.textContent = (ch && ch.pairs) ? 'Nome do 1º elemento da dupla' : 'Nome do Participante';
   if (!ch) { field.innerHTML = ''; return; }
   if (isTimeUnit(ch.unit)) {
     field.innerHTML = `
@@ -4219,7 +4272,12 @@ function submitManualResult() {
   const ch = s.challenges.find(c => c.id === challengeId);
   if (!ch) { showMsg('admin-manual-msg', 'Escolhe um desafio válido.', 'err'); return; }
   const nameInput = document.getElementById('admin-manual-name');
-  const name = nameInput.value.trim();
+  const name2Input = document.getElementById('admin-manual-name2');
+  let name = nameInput.value.trim();
+  if (ch.pairs) {
+    name = pairName(name, name2Input ? name2Input.value : '');
+    if (!name) { showMsg('admin-manual-msg', 'Desafio a pares: insere os nomes dos dois elementos.', 'err'); return; }
+  }
   if (!name) { showMsg('admin-manual-msg', 'Insere o nome do participante.', 'err'); return; }
 
   let value, displayStr;
@@ -4242,6 +4300,7 @@ function submitManualResult() {
   saveResult(challengeId, { name, club, value, day, ts: Date.now() });
   showMsg('admin-manual-msg', '✓ ' + name + ' — ' + displayStr + ' (' + dayDisplay(day) + ')', 'ok');
   nameInput.value = '';
+  if (name2Input) name2Input.value = '';
   renderAll();
 }
 
@@ -4321,8 +4380,14 @@ function renderStaffPanel(s, club) {
         <div class="ch-block-unit">${ch.unit}</div>
       </div>
       ${ch.desc ? `<div class="small" style="margin-top:-6px;">${escapeHtml(ch.desc)}</div>` : ''}
+      ${ch.pairs ? `
+      <div class="small" style="margin-top:0;color:var(--kawasaki-green);font-weight:700;">DESAFIO A PARES — um resultado por dupla</div>
+      <label>Nome do 1º elemento</label>
+      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio" style="margin-bottom:10px;">
+      <label>Nome do 2º elemento</label>
+      <input type="text" id="res-name2-${club}-${ch.id}" placeholder="Nome + nº de sócio" style="margin-bottom:12px;">` : `
       <label>Nome do Participante</label>
-      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">
+      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">`}
       ${formHtml}
       <button class="btn ${club === 'a' ? 'btn-red' : 'btn-blue'}" style="margin-top:14px;" onclick="submitResult('${club}', ${ch.id})">Registar Resultado</button>
       <div style="margin-top:16px;">
@@ -4494,7 +4559,7 @@ function renderTV(sFull) {
       for (const club of ['a', 'b']) {
         const rs = (s.results[ch.id] || []).filter(r => r.club === club && !r.disqualified);
         for (const r of rs) {
-          const key = club + '|' + r.name;
+          const key = club + '|' + athleteKey(ch, r.name);
           if (!athleteMap[key]) athleteMap[key] = { name: r.name, club, total: 0, challengeIds: new Set() };
           athleteMap[key].total += pointsForResult(ch, r.value);
           athleteMap[key].challengeIds.add(ch.id);
@@ -4511,7 +4576,7 @@ function renderTV(sFull) {
     const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
       <div class="tv-athlete-total-card">
         <div class="tv-athlete-total-title" style="color:var(--kawasaki-green);display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-          <span>TOTAL POR ATLETA (SOMA DE PONTOS · EDIÇÃO TODA) · INTERCLUBES</span>
+          <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · EDIÇÃO TODA) · INTERCLUBES</span>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
             <span class="tv-ch-result-badge" style="color:var(--kawasaki-green);background:rgba(255,212,0,.12);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
@@ -4588,9 +4653,10 @@ function renderTV(sFull) {
   for (const ch of s.challenges) {
     const rs = (s.results[ch.id] || []).filter(r => r.club === club && !r.disqualified);
     for (const r of rs) {
-      if (!athleteMap[r.name]) athleteMap[r.name] = { name: r.name, total: 0, challengeIds: new Set() };
-      athleteMap[r.name].total += pointsForResult(ch, r.value);
-      athleteMap[r.name].challengeIds.add(ch.id);
+      const k = athleteKey(ch, r.name);
+      if (!athleteMap[k]) athleteMap[k] = { name: r.name, total: 0, challengeIds: new Set() };
+      athleteMap[k].total += pointsForResult(ch, r.value);
+      athleteMap[k].challengeIds.add(ch.id);
     }
   }
   // Mais pontos = melhor, sempre (ver pointsForResult).
@@ -4600,7 +4666,7 @@ function renderTV(sFull) {
   const athleteTotalHtml = (resultsMode !== 'combined' || athleteTotals.length === 0) ? '' : `
     <div class="tv-athlete-total-card">
       <div class="tv-athlete-total-title" style="display:flex;flex-direction:column;align-items:stretch;gap:6px;">
-        <span>TOTAL POR ATLETA (SOMA DE PONTOS · EDIÇÃO TODA) · POR CLUBE</span>
+        <span>TOTAL POR ${s.challenges.length && s.challenges.every(c => c.pairs) ? 'DUPLA' : 'ATLETA'} (SOMA DE PONTOS · EDIÇÃO TODA) · POR CLUBE</span>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
           ${athleteTotals[0] ? `<span class="tv-ch-best">🏅 Melhor: <b>${escapeHtml(athleteTotals[0].name)}</b> — ${formatPoints(athleteTotals[0].total)}</span>` : '<span></span>'}
           <span class="tv-ch-result-badge" style="color:${clubColor};background:rgba(255,255,255,.06);">Soma total: ${formatPoints(athleteGrandTotal)}</span>
