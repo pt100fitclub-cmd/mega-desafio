@@ -766,7 +766,7 @@
       <label>Participação</label>
       <select id="admin-pairs">
         <option value="0">Individual — 1 nome</option>
-        <option value="1">A pares — 2 nomes (a dupla conta como um resultado)</option>
+        <option value="1">Em duplas — 2 nomes, 1 resultado por dupla</option>
       </select>
       <label>Ordenação (maior = melhor?)</label>
       <select id="admin-order" onchange="renderAdminNewChallengeRefField()">
@@ -821,7 +821,7 @@
   <div id="staff-msg-a" class="msg"></div>
   <div class="card" style="border-top:3px solid var(--club-a)">
     <h2 id="staff-title-a">Lançar — M. Martins</h2>
-    <div id="staff-pairs-note-a" style="display:none;color:var(--kawasaki-green);font-weight:700;font-size:13px;margin:-4px 0 8px;">DESAFIO A PARES — um resultado por dupla</div>
+    <div id="staff-pairs-note-a" style="display:none;color:var(--kawasaki-green);font-weight:700;font-size:13px;margin:-4px 0 8px;">DESAFIO EM DUPLAS — 1 resultado por dupla</div>
     <div class="small" style="margin-top:0;" id="staff-day-a"></div>
   </div>
   <div id="staff-blocks-a"><p class="empty-note">Nenhum desafio ativo. Aguarda o admin ativar um desafio.</p></div>
@@ -846,7 +846,7 @@
   <div id="staff-msg-b" class="msg"></div>
   <div class="card" style="border-top:3px solid var(--club-b)">
     <h2 id="staff-title-b">Lançar — Terrugem</h2>
-    <div id="staff-pairs-note-b" style="display:none;color:var(--kawasaki-green);font-weight:700;font-size:13px;margin:-4px 0 8px;">DESAFIO A PARES — um resultado por dupla</div>
+    <div id="staff-pairs-note-b" style="display:none;color:var(--kawasaki-green);font-weight:700;font-size:13px;margin:-4px 0 8px;">DESAFIO EM DUPLAS — 1 resultado por dupla</div>
     <div class="small" style="margin-top:0;" id="staff-day-b"></div>
   </div>
   <div id="staff-blocks-b"><p class="empty-note">Nenhum desafio ativo. Aguarda o admin ativar um desafio.</p></div>
@@ -3933,7 +3933,7 @@ function togglePairs(id) {
   const ch = s.challenges.find(c => c.id === id);
   if (!ch) return;
   const novo = !ch.pairs;
-  if (!confirm(`Mudar "${ch.name}" para ${novo ? 'A PARES (2 nomes)' : 'INDIVIDUAL (1 nome)'}?\n\nOs resultados já lançados não mudam.`)) return;
+  if (!confirm(`Mudar "${ch.name}" para ${novo ? 'EM DUPLAS (2 nomes)' : 'INDIVIDUAL (1 nome)'}?\n\nOs resultados já lançados não mudam.`)) return;
   ch.pairs = novo;
   setState(s);
   renderAll();
@@ -3948,7 +3948,7 @@ function submitResult(club, challengeId) {
   if (ch.pairs) {
     const n2 = document.getElementById(`res-name2-${club}-${challengeId}`);
     name = pairName(name, n2 ? n2.value : '');
-    if (!name) { showMsg('staff-msg-' + club, 'Desafio a pares: insere os nomes dos dois elementos.', 'err'); return; }
+    if (!name) { showMsg('staff-msg-' + club, 'Desafio em duplas: escreve o nome dos dois elementos.', 'err'); return; }
   }
   if (!name) { showMsg('staff-msg-' + club, 'Insere o nome do participante.', 'err'); return; }
   let value, displayStr;
@@ -4195,7 +4195,7 @@ function renderAdmin(sFull) {
           <div class="challenge-item-unit">${c.unit} · ${c.order === 'desc' ? 'mais é melhor' : 'menos é melhor'}
             <a href="#" onclick="event.preventDefault();toggleChallengeOrder(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
           </div>
-          <div class="challenge-item-unit" style="margin-top:2px;">${c.pairs ? '<b style="color:var(--kawasaki-green);">A pares (2 nomes)</b>' : 'Individual'}
+          <div class="challenge-item-unit" style="margin-top:2px;">${c.pairs ? '<b style="color:var(--kawasaki-green);">Em duplas (2 nomes)</b>' : 'Individual'}
             <a href="#" onclick="event.preventDefault();togglePairs(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
           </div>
           <div class="challenge-item-unit" style="margin-top:2px;">
@@ -4366,7 +4366,7 @@ function submitManualResult() {
   let name = nameInput.value.trim();
   if (ch.pairs) {
     name = pairName(name, name2Input ? name2Input.value : '');
-    if (!name) { showMsg('admin-manual-msg', 'Desafio a pares: insere os nomes dos dois elementos.', 'err'); return; }
+    if (!name) { showMsg('admin-manual-msg', 'Desafio em duplas: escreve o nome dos dois elementos.', 'err'); return; }
   }
   if (!name) { showMsg('admin-manual-msg', 'Insere o nome do participante.', 'err'); return; }
 
