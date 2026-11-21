@@ -734,6 +734,21 @@
     </div>
 
     <div class="card">
+      <h2>📸 Fotos — partilhar e descarregar</h2>
+      <div class="small" style="margin-top:0;">Cada foto enviada fica na app e é copiada para a pasta do Google Drive (subpastas por clube).</div>
+      <button class="btn btn-ghost" style="margin-top:6px;" onclick="window.open(DRIVE_FOLDER_URL, '_blank')">📁 Abrir pasta no Google Drive</button>
+      <label style="margin-top:14px;">Edição</label>
+      <select id="admin-photo-edition" onchange="renderAdminPhotoShare()"></select>
+      <div id="admin-photo-edition-info" class="small" style="margin-top:6px;"></div>
+      <button class="btn btn-green" style="margin-top:8px;" onclick="downloadPhotosZip()">⬇ Descarregar fotos (ZIP)</button>
+      <label style="margin-top:14px;">Link do álbum partilhado desta edição</label>
+      <div class="small" style="margin-top:0;">Cria o álbum no Google Fotos (ou partilha a pasta do Drive) com "qualquer pessoa com o link" e cola aqui o link. Aparece no "Álbum de Fotos" como botão "Ver álbum partilhado".</div>
+      <input type="url" id="admin-album-url" placeholder="https://photos.app.goo.gl/…">
+      <button class="btn btn-ghost" style="margin-top:8px;" onclick="saveAlbumUrl()">Guardar link</button>
+      <div id="admin-photo-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
       <h2>📅 Edições</h2>
       <div class="small" style="margin-top:0;">Cada edição tem as suas datas (1 dia, 3 dias, uma semana…) e os seus desafios. Os desafios novos ficam na edição ativa. As edições anteriores ficam guardadas, sem apagar nada, e consultam-se em "Resultados".</div>
       <div id="admin-edition-active"></div>
@@ -3295,7 +3310,8 @@ function getEditionsRaw() {
 }
 function getEditionsData() {
   const raw = getEditionsRaw() || {};
-  const list = Object.assign({}, DEFAULT_EDITIONS, raw.list || {});
+  const list = Object.assign({}, DEFAULT_EDITIONS);
+  Object.keys(raw.list || {}).forEach(id => { list[id] = Object.assign({}, DEFAULT_EDITIONS[id] || {}, raw.list[id]); });
   const active = (raw.active && list[raw.active]) ? raw.active : DEFAULT_ACTIVE_EDITION;
   return { list, active, assign: raw.assign || {} };
 }
@@ -4168,6 +4184,7 @@ function renderAdmin(sFull) {
   const ed = activeEdition();
   const edDays = editionDays(ed);
   renderAdminEditions(sFull, ed, edDays);
+  renderAdminPhotoShare();
   // day strip (dias da edição ativa + aba TOTAL)
   const strip = document.getElementById('admin-day-strip');
   strip.innerHTML = edDays.map(w => {
@@ -5103,6 +5120,92 @@ function photoEditionId(photo) {
   });
   return best || d.active;
 }
+// ── Área do PIN: partilhar e descarregar fotos ──
+const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/1w8ZFbfwcDctDW7hOerDnxp7sDqR8Kwhw';
+function photosForEdition(edId) {
+  const photos = getPhotos();
+  const out = [];
+  ['a', 'b'].forEach(club => Object.keys(photos[club] || {}).forEach(id => {
+    const ph = Object.assign({ club, id }, photos[club][id]);
+    if (edId === 'ALL' || photoEditionId(ph) === edId) out.push(ph);
+  }));
+  return out.sort((x, y) => x.ts - y.ts);
+}
+function renderAdminPhotoShare() {
+  const sel = document.getElementById('admin-photo-edition');
+  if (!sel) return;
+  const eds = editionsArray();
+  const opts = `<option value="ALL">Todas as edições</option>` + eds.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  if (sel.dataset.sig !== opts) {
+    const prev = sel.value || getEditionsData().active;
+    sel.innerHTML = opts; sel.dataset.sig = opts;
+    sel.value = [...sel.options].some(o => o.value === prev) ? prev : getEditionsData().active;
+  }
+  const edId = sel.value;
+  const list = photosForEdition(edId);
+  const nA = list.filter(p => p.club === 'a').length, nB = list.length - nA;
+  const s = getState();
+  const info = document.getElementById('admin-photo-edition-info');
+  if (info) info.textContent = `${list.length} foto${list.length === 1 ? '' : 's'} (${s.clubNames.a}: ${nA} · ${s.clubNames.b}: ${nB})`;
+  const urlInput = document.getElementById('admin-album-url');
+  if (urlInput && document.activeElement !== urlInput) {
+    urlInput.disabled = edId === 'ALL';
+    urlInput.value = edId === 'ALL' ? '' : (getEdition(edId).albumUrl || '');
+    urlInput.placeholder = edId === 'ALL' ? 'Escolhe uma edição para guardar o link' : 'https://photos.app.goo.gl/…';
+  }
+}
+function saveAlbumUrl() {
+  const edId = document.getElementById('admin-photo-edition').value;
+  if (edId === 'ALL') { showMsg('admin-photo-msg', 'Escolhe uma edição.', 'err'); return; }
+  const url = document.getElementById('admin-album-url').value.trim();
+  if (url && !/^https:\/\//i.test(url)) { showMsg('admin-photo-msg', 'O link tem de começar por https://', 'err'); return; }
+  editionsWrite('list/' + edId + '/albumUrl', url || null);
+  showMsg('admin-photo-msg', url ? '✓ Link guardado.' : '✓ Link removido.', 'ok');
+  renderAll();
+}
+function loadJsZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    sc.onload = () => resolve(window.JSZip);
+    sc.onerror = () => reject(new Error('Não foi possível carregar o compressor ZIP.'));
+    document.head.appendChild(sc);
+  });
+}
+async function downloadPhotosZip() {
+  const edId = document.getElementById('admin-photo-edition').value;
+  const list = photosForEdition(edId);
+  if (!list.length) { showMsg('admin-photo-msg', 'Não há fotos nesta edição.', 'err'); return; }
+  showMsg('admin-photo-msg', 'A preparar o ZIP…', 'ok');
+  try {
+    const JSZip = await loadJsZip();
+    const zip = new JSZip();
+    const s = getState();
+    const folderName = c => (c === 'a' ? s.clubNames.a : s.clubNames.b).replace(/[^\wÀ-ú -]/g, '').trim().replace(/\s+/g, '_');
+    const count = {};
+    list.forEach(ph => {
+      if (!ph.img || ph.img.indexOf('base64,') < 0) return;
+      const dt = new Date(ph.ts || 0);
+      const day = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      const edName = edId === 'ALL' ? (getEdition(photoEditionId(ph)).name || 'edicao') : '';
+      const dir = (edName ? edName.replace(/[\/:*?"<>|]/g, '') + '/' : '') + folderName(ph.club);
+      const key = dir + day; count[key] = (count[key] || 0) + 1;
+      zip.file(`${dir}/${day}_${String(count[key]).padStart(2, '0')}.jpg`, ph.img.split('base64,')[1], { base64: true });
+    });
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    const edLabel = edId === 'ALL' ? 'todas' : getEdition(edId).name;
+    a.href = URL.createObjectURL(blob);
+    a.download = ('Fotos Desafios 100% - ' + edLabel).replace(/[\/:*?"<>|]/g, '') + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    showMsg('admin-photo-msg', `✓ ZIP com ${list.length} foto${list.length === 1 ? '' : 's'} descarregado.`, 'ok');
+  } catch (e) {
+    showMsg('admin-photo-msg', 'Erro ao criar o ZIP: ' + e.message, 'err');
+  }
+}
+
 // Álbum: "Todas" mostra as fotos de todas as edições (local a este dispositivo).
 let photoViewAll = false;
 function selectPhotoEdition(id) {
@@ -5154,7 +5257,9 @@ function renderPhotoGallery() {
       `<div class="tv-page-tab ${photoViewAll ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('ALL')">Todas</div>` +
       eds.map(e => `<div class="tv-page-tab ${!photoViewAll && e.id === viewEd.id ? 'selected' : ''}" style="min-width:120px;" onclick="selectPhotoEdition('${e.id}')">${e.id === activeEdId ? '★ ' : ''}${escapeHtml(e.name)}</div>`).join('') +
       `</div>` : '';
-    const countHtml = `<div style="font-size:12px;color:var(--dim);margin:0 0 10px;">${photoViewAll ? 'Todas as edições' : escapeHtml(viewEd.name)} · ${edEntries.length} foto${edEntries.length === 1 ? '' : 's'}</div>`;
+    const countHtml = `<div style="font-size:12px;color:var(--dim);margin:0 0 10px;">${photoViewAll ? 'Todas as edições' : escapeHtml(viewEd.name)} · ${edEntries.length} foto${edEntries.length === 1 ? '' : 's'}</div>` +
+      (!photoViewAll && viewEd.albumUrl && /^https:\/\//i.test(viewEd.albumUrl)
+        ? `<a class="btn btn-ghost" style="display:block;text-align:center;text-decoration:none;margin:0 0 14px;" href="${escapeHtml(viewEd.albumUrl)}" target="_blank" rel="noopener">🔗 Ver álbum partilhado</a>` : '');
 
     if (edEntries.length === 0) {
       photosBody.innerHTML = barHtml + countHtml + `<div class="photo-empty">Sem fotos nesta edição. Usa "📷 Adicionar Foto" nas abas de Lançar para enviares a primeira.</div>`;
