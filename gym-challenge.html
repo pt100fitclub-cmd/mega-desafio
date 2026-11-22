@@ -734,6 +734,13 @@
     </div>
 
     <div class="card">
+      <h2>💾 Cópia de segurança</h2>
+      <div class="small" style="margin-top:0;">Descarrega um ficheiro com TODOS os dados da app (desafios, edições, resultados, fotos). Guarda-o num sítio seguro, por exemplo uma vez por mês ou no fim de cada desafio.</div>
+      <button class="btn btn-ghost" style="margin-top:6px;" onclick="downloadBackup()">💾 Descarregar cópia de segurança</button>
+      <div id="admin-backup-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
       <h2>📸 Fotos — partilhar e descarregar</h2>
       <div class="small" style="margin-top:0;">Cada foto enviada fica na app e é copiada para a pasta do Google Drive (subpastas por clube).</div>
       <button class="btn btn-ghost" style="margin-top:6px;" onclick="window.open(DRIVE_FOLDER_URL, '_blank')">📁 Abrir pasta no Google Drive</button>
@@ -818,7 +825,9 @@
 
     <div class="card">
       <h2>Desafios Criados</h2>
-      <div class="small" style="margin-top:0;">Podes ativar vários desafios ao mesmo tempo — cada um fica disponível para lançamento em ambos os clubes.</div>
+      <div class="small" style="margin-top:0;">Podes ativar vários desafios ao mesmo tempo — cada um fica disponível para lançamento em ambos os clubes. Escolhe outra edição para corrigir textos e referências de desafios antigos.</div>
+      <label>Edição</label>
+      <select id="admin-challenges-edition" onchange="renderAll()"></select>
       <div id="admin-challenge-list"><p class="empty-note">Nenhum desafio criado ainda.</p></div>
     </div>
 
@@ -3650,10 +3659,17 @@ function switchView(v) {
 // ══════════════════════════════════════
 // PIN
 // ══════════════════════════════════════
-const ADMIN_PIN = '100%';
-function checkPin() {
+// Só fica no código a impressão digital (SHA-256) do PIN, não o PIN em si.
+const ADMIN_PIN_SHA256 = '32e48995f98ce3b76f2d3f5e2d2acddfeff6650b7b18628cfa739bfef4a03312';
+async function sha256Hex(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function checkPin() {
   const input = document.getElementById('admin-pin-input').value;
-  if (input === ADMIN_PIN) {
+  let ok = false;
+  try { ok = (await sha256Hex(input)) === ADMIN_PIN_SHA256; } catch (e) { ok = false; }
+  if (ok) {
     document.getElementById('admin-lock').style.display = 'none';
     document.getElementById('admin-content').style.display = 'block';
   } else {
@@ -3956,8 +3972,33 @@ function resetDayResults(challengeId) {
 // Desafios a pares: o resultado é da dupla. Os dois nomes ficam num só registo,
 // sempre pela mesma ordem (alfabética), para que "Ana & Rui" e "Rui & Ana" sejam
 // a mesma dupla nos totais de vários desafios.
+// Formato único dos nomes: maiúscula no início de cada palavra ("de/da/do/dos/das/e"
+// em minúsculas), espaços a mais removidos. Números de sócio ficam como estão.
+function formatPersonName(n) {
+  return String(n || '').trim().replace(/\s+/g, ' ').split(' ').map((w, i) => {
+    const lw = w.toLocaleLowerCase('pt-PT');
+    if (i > 0 && ['de', 'da', 'do', 'dos', 'das', 'e'].includes(lw)) return lw;
+    return lw.split('-').map(p => p.charAt(0).toLocaleUpperCase('pt-PT') + p.slice(1)).join('-');
+  }).join(' ');
+}
+function formatResultName(n) { return String(n || '').split(' & ').map(formatPersonName).join(' & '); }
+// Lista de nomes já usados em cada clube (sugestões ao escrever).
+function renderNameLists(s) {
+  ['a', 'b'].forEach(club => {
+    const set = new Set();
+    s.challenges.forEach(c => (s.results[c.id] || []).forEach(r => {
+      if (r.club === club) String(r.name || '').split(' & ').forEach(n => { if (n.trim()) set.add(n.trim()); });
+    }));
+    const html = [...set].sort((x, y) => x.localeCompare(y, 'pt')).map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    let dl = document.getElementById('names-list-' + club);
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'names-list-' + club; document.body.appendChild(dl); }
+    if (dl.dataset.sig !== String(html.length) + set.size) { dl.innerHTML = html; dl.dataset.sig = String(html.length) + set.size; }
+  });
+  const mClub = document.getElementById('admin-manual-club');
+  ['admin-manual-name', 'admin-manual-name2'].forEach(id => { const el = document.getElementById(id); if (el && mClub) el.setAttribute('list', 'names-list-' + mClub.value); });
+}
 function pairName(n1, n2) {
-  const a = String(n1 || '').trim(), b = String(n2 || '').trim();
+  const a = formatPersonName(n1), b = formatPersonName(n2);
   if (!a || !b) return '';
   return [a, b].sort((x, y) => x.localeCompare(y, 'pt', { sensitivity: 'base' })).join(' & ');
 }
@@ -3999,6 +4040,20 @@ function partsLine(parts) {
   const txt = parts.map(p => `${escapeHtml(p.ch.name)}: <b style="color:var(--text, #fff);">${displayValue(p.value, p.ch.unit)}</b> <span style="opacity:.7;">(${formatPoints(pointsForResult(p.ch, p.value))})</span>`).join(' · ');
   return `<div style="font-size:11px;color:var(--dim);margin-top:3px;line-height:1.35;white-space:normal;">${txt}</div>`;
 }
+function editChallengeText(id) {
+  const s = getState();
+  const ch = s.challenges.find(c => c.id === id);
+  if (!ch) return;
+  const name = prompt('Nome do desafio:', ch.name);
+  if (name === null) return;
+  if (!name.trim()) { alert('O nome não pode ficar vazio.'); return; }
+  const desc = prompt('Descrição (pode ficar vazia):', ch.desc || '');
+  if (desc === null) return;
+  ch.name = name.trim();
+  ch.desc = desc.trim();
+  setState(s);
+  renderAll();
+}
 function togglePairs(id) {
   const s = getState();
   const ch = s.challenges.find(c => c.id === id);
@@ -4015,7 +4070,7 @@ function submitResult(club, challengeId) {
   const ch = s.challenges.find(c => c.id === challengeId);
   if (!ch) return;
   const nameInput = document.getElementById(`res-name-${club}-${challengeId}`);
-  let name = nameInput.value.trim();
+  let name = formatPersonName(nameInput.value);
   if (ch.pairs) {
     const n2 = document.getElementById(`res-name2-${club}-${challengeId}`);
     name = pairName(name, n2 ? n2.value : '');
@@ -4142,6 +4197,7 @@ function deleteResult() {
 // ══════════════════════════════════════
 function renderAll() {
   const s = getState();
+  try { renderNameLists(s); } catch (e) {}
   renderAdmin(s);
   renderStaff(s);
   renderTV(s);
@@ -4252,17 +4308,30 @@ function renderAdmin(sFull) {
       <span class="d-label" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">EDIÇÃO</span><span class="d-date" style="${s.tvDay === 'TOTAL' ? '' : 'color:var(--kawasaki-green);'}">TOTAL</span>
     </div>`;
 
-  // challenge list
+  // challenge list (edição escolhida no seletor; por defeito a ativa)
   const list = document.getElementById('admin-challenge-list');
-  if (s.challenges.length === 0) {
+  const edSel = document.getElementById('admin-challenges-edition');
+  let listEdId = ed.id;
+  if (edSel) {
+    const opts = editionsArray().map(e => `<option value="${e.id}">${e.id === ed.id ? '★ ' : ''}${escapeHtml(e.name)} — ${editionMonth(e)}</option>`).join('');
+    if (edSel.dataset.sig !== opts) { const prev = edSel.value; edSel.innerHTML = opts; edSel.dataset.sig = opts; edSel.value = [...edSel.options].some(o => o.value === prev) ? prev : ed.id; }
+    // se a edição ativa mudou, a lista volta a mostrar a nova edição ativa
+    if (edSel.dataset.active !== ed.id) { edSel.dataset.active = ed.id; edSel.value = ed.id; }
+    if (edSel.value) listEdId = edSel.value;
+  }
+  const listIsActiveEd = listEdId === ed.id;
+  const listChallenges = listIsActiveEd ? s.challenges : sFull.challenges.filter(c => editionIdOf(c) === listEdId);
+  if (listChallenges.length === 0) {
     list.innerHTML = '<p class="empty-note">Nenhum desafio nesta edição ainda. Cria um em "Configurar Desafios".</p>';
   } else {
-    list.innerHTML = s.challenges.map(c => {
-      const active = s.activeChallengeIds.includes(c.id);
+    list.innerHTML = listChallenges.map(c => {
+      const active = listIsActiveEd && s.activeChallengeIds.includes(c.id);
       return `
       <div class="challenge-item">
         <div style="flex:1;">
-          <div class="challenge-item-name">${challengeTitleHtml(c.name)}</div>
+          <div class="challenge-item-name">${challengeTitleHtml(c.name)}
+            <a href="#" onclick="event.preventDefault();editChallengeText(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;font-size:12px;font-weight:400;">editar nome/descrição</a>
+          </div>
           ${c.desc ? `<div style="font-size:12px;color:var(--dim);margin:2px 0;">${escapeHtml(c.desc)}</div>` : ''}
           <div class="challenge-item-unit">${c.unit} · ${c.order === 'desc' ? 'mais é melhor' : 'menos é melhor'}
             <a href="#" onclick="event.preventDefault();toggleChallengeOrder(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
@@ -4275,9 +4344,9 @@ function renderAdmin(sFull) {
             <a href="#" onclick="event.preventDefault();editChallengeReference(${c.id})" style="color:var(--kawasaki-green);text-decoration:underline;margin-left:6px;">editar</a>
           </div>
         </div>
-        <span class="badge ${active ? 'badge-active' : 'badge-waiting'}">${active ? 'ATIVO' : 'Inativo'}</span>
+        ${listIsActiveEd ? `<span class="badge ${active ? 'badge-active' : 'badge-waiting'}">${active ? 'ATIVO' : 'Inativo'}</span>
         <button onclick="toggleActive(${c.id})" class="btn btn-sm ${active ? 'btn-ghost' : 'btn-green'}">${active ? 'Desativar' : 'Ativar'}</button>
-        <button onclick="deleteChallenge(${c.id})" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:0 4px;">✕</button>
+        <button onclick="deleteChallenge(${c.id})" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:0 4px;">✕</button>` : `<span class="badge badge-waiting">Arquivo</span>`}
       </div>`;
     }).join('');
   }
@@ -4435,7 +4504,7 @@ function submitManualResult() {
   if (!ch) { showMsg('admin-manual-msg', 'Escolhe um desafio válido.', 'err'); return; }
   const nameInput = document.getElementById('admin-manual-name');
   const name2Input = document.getElementById('admin-manual-name2');
-  let name = nameInput.value.trim();
+  let name = formatPersonName(nameInput.value);
   if (ch.pairs) {
     name = pairName(name, name2Input ? name2Input.value : '');
     if (!name) { showMsg('admin-manual-msg', 'Desafio em duplas: escreve o nome dos dois elementos.', 'err'); return; }
@@ -4551,11 +4620,11 @@ function renderStaffPanel(s, club) {
       ${ch.desc ? `<div class="small" style="margin-top:-6px;">${escapeHtml(ch.desc)}</div>` : ''}
       ${ch.pairs ? `
       <label>Nome do 1º elemento</label>
-      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio" style="margin-bottom:10px;">
+      <input type="text" id="res-name-${club}-${ch.id}" list="names-list-${club}" autocomplete="off" placeholder="Nome + nº de sócio" style="margin-bottom:10px;">
       <label>Nome do 2º elemento</label>
-      <input type="text" id="res-name2-${club}-${ch.id}" placeholder="Nome + nº de sócio" style="margin-bottom:12px;">` : `
+      <input type="text" id="res-name2-${club}-${ch.id}" list="names-list-${club}" autocomplete="off" placeholder="Nome + nº de sócio" style="margin-bottom:12px;">` : `
       <label>Nome do Participante</label>
-      <input type="text" id="res-name-${club}-${ch.id}" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">`}
+      <input type="text" id="res-name-${club}-${ch.id}" list="names-list-${club}" autocomplete="off" placeholder="Nome + nº de sócio (evita nomes iguais)" style="margin-bottom:12px;">`}
       ${formHtml}
       <button class="btn ${club === 'a' ? 'btn-red' : 'btn-blue'}" style="margin-top:14px;" onclick="submitResult('${club}', ${ch.id})">Registar Resultado</button>
       <div style="margin-top:16px;">
@@ -4576,8 +4645,15 @@ function renderTV(sFull) {
   // Edição que se está a ver (por defeito a ativa) — só os desafios e resultados dela.
   const allEds = editionsArray();
   const viewEd = viewAllEditions ? { id: 'ALL', name: 'Total Geral', start: allEds.length ? allEds[allEds.length - 1].start : '', end: '' } : viewEdition();
-  const edDays = viewAllEditions ? [] : editionDays(viewEd);
   const s = viewAllEditions ? scopedAllState(sFull) : scopedState(sFull, viewEd);
+  // Na edição ativa mostram-se todos os dias; nas anteriores, só os dias com resultados.
+  let edDays = viewAllEditions ? [] : editionDays(viewEd);
+  if (!viewAllEditions && viewEd.id !== getEditionsData().active) {
+    const used = new Set();
+    s.challenges.forEach(c => (s.results[c.id] || []).forEach(r => used.add(r.day)));
+    const withRes = edDays.filter(d => used.has(d.date));
+    if (withRes.length) edDays = withRes;
+  }
   const activeEdId = getEditionsData().active;
   if (viewAllEditions) resultsDay = 'TOTAL';
   else if (resultsDay !== 'TOTAL' && !edDays.some(d => d.date === resultsDay)) {
@@ -5246,6 +5322,31 @@ function loadJsZip() {
     sc.onerror = () => reject(new Error('Não foi possível carregar o compressor ZIP.'));
     document.head.appendChild(sc);
   });
+}
+async function downloadBackup() {
+  showMsg('admin-backup-msg', 'A preparar a cópia…', 'ok');
+  try {
+    let data;
+    try {
+      const r = await fetch('https://desafio-interclubes-default-rtdb.europe-west1.firebasedatabase.app/.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      data = await r.json();
+    } catch (e) {
+      // sem ligação: usa o que está guardado neste dispositivo
+      data = { stateWeek: JSON.parse(localStorage.getItem('gymChallengeWeek_v2') || '{}'), resultsWeek: getResultsCache(), photosWeek: getPhotos(), editionsWeek: getEditionsRaw(), _origem: 'cópia local deste dispositivo (sem ligação à base de dados)' };
+    }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup_desafios_100_${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    showMsg('admin-backup-msg', `✓ Cópia descarregada (${(blob.size / 1048576).toFixed(1)} MB).`, 'ok');
+  } catch (e) {
+    showMsg('admin-backup-msg', 'Erro ao criar a cópia: ' + e.message, 'err');
+  }
 }
 async function downloadPhotosZip() {
   const edId = document.getElementById('admin-photo-edition').value;
