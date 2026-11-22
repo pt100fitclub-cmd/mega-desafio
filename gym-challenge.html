@@ -7,8 +7,15 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
+  // apiKey/appId identificam o projeto (não são segredos): quem protege os dados
+  // são as regras da base de dados + o login da administração.
   const firebaseConfig = {
+    apiKey: "AIzaSyAVIn0R6TxN_a2azRqPtdRwbhGmCIoOuFs",
+    authDomain: "desafio-interclubes.firebaseapp.com",
+    projectId: "desafio-interclubes",
+    appId: "1:930875060877:web:5fa5bc8ecb0c73072ca8c4",
     databaseURL: "https://desafio-interclubes-default-rtdb.europe-west1.firebasedatabase.app"
   };
 
@@ -16,40 +23,47 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    window.fbSet = (path, data) => set(ref(db, path), data).catch(e => console.warn('Firebase write error:', e));
-    // Igual ao fbSet, mas devolve true/false — para avisar o admin se a base de
-    // dados recusar a gravação (ex.: regras do Firebase), em vez de falhar em silêncio.
-    window.fbSetOk = (path, data) => set(ref(db, path), data).then(() => true).catch(e => { console.warn('Firebase write error:', e); return false; });
+    // ── Sessão de administração (Firebase Auth) ──
+    // O PIN só esconde o ecrã; o que a base de dados aceita depende desta sessão.
+    window.fbAdminUser = null;
+    try {
+      const auth = getAuth(app);
+      window.fbSignIn = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
+      window.fbSignOut = () => signOut(auth);
+      onAuthStateChanged(auth, (user) => {
+        window.fbAdminUser = user ? { email: user.email, uid: user.uid } : null;
+        if (typeof renderAdminSession === 'function') renderAdminSession();
+      });
+    } catch (e) {
+      console.warn('Firebase Auth indisponível:', e);
+    }
+
+    // Avisa (no máximo 1x a cada 20 s) quando a base de dados recusa uma gravação,
+    // em vez de falhar em silêncio. Nos ecrãs dos clubes o aviso é feito no próprio
+    // formulário (ver submitResult / fotos); este é para a administração.
+    let lastDeniedAlert = 0;
+    const reportDenied = (path, e) => {
+      console.warn('Firebase write error:', path, e);
+      if (Date.now() - lastDeniedAlert > 20000) {
+        lastDeniedAlert = Date.now();
+        alert('A base de dados recusou esta gravação. Na área do PIN, inicia sessão de administração e repete.');
+      }
+    };
+    window.fbSet = (path, data) => set(ref(db, path), data).then(() => true).catch(e => { reportDenied(path, e); return false; });
+    // Igual ao fbSet, mas NÃO mostra aviso geral — quem chama decide o que mostrar.
+    window.fbSetOk = (path, data) => set(ref(db, path), data).then(() => true).catch(e => { console.warn('Firebase write error:', path, e); return false; });
 
     // Path "stateWeek" para não colidir com a app original (que usa "state").
     // Guarda config geral (desafios, nomes dos clubes, dia/pódio selecionados) —
     // já NÃO inclui os resultados (ver "resultsWeek" abaixo), precisamente para
     // que registar um resultado num dispositivo nunca reescreva/apague o que
     // outro dispositivo acabou de gravar.
-    let migratedLegacyResults = false;
     onValue(ref(db, 'stateWeek'), (snap) => {
       const data = snap.val();
       if (data) {
         localStorage.setItem('gymChallengeWeek_v2', JSON.stringify(data));
-        // Migração única: versões anteriores desta app guardavam os resultados
-        // embutidos aqui dentro (stateWeek.results). Passa-os para o novo
-        // caminho "resultsWeek" (um sítio próprio por resultado), para não
-        // perder resultados já lançados antes desta correção. Usa um ID
-        // derivado do "ts" de cada resultado, por isso é seguro correr esta
-        // migração mais do que uma vez (em vários dispositivos): nunca duplica.
-        if (!migratedLegacyResults && data.results) {
-          migratedLegacyResults = true;
-          Object.keys(data.results).forEach(challengeId => {
-            (data.results[challengeId] || []).forEach(r => {
-              if (!r || !r.ts) return;
-              const legacyId = 'legacy' + r.ts;
-              const payload = { name: r.name, club: r.club, value: r.value, day: r.day, ts: r.ts };
-              if (r.disqualified) payload.disqualified = true;
-              set(ref(db, 'resultsWeek/' + challengeId + '/' + legacyId), payload)
-                .catch(e => console.warn('Falha a migrar resultado antigo:', e));
-            });
-          });
-        }
+        // (A migração antiga de stateWeek.results foi removida a 22/11/2026: já não
+        //  existem resultados embutidos no stateWeek, confirmado na base de dados.)
       } else {
         localStorage.removeItem('gymChallengeWeek_v2');
       }
@@ -697,6 +711,27 @@
   </div>
 
   <div id="admin-content" style="display:none;">
+
+  <!-- Sessão de administração (Firebase Auth): sem ela, a base de dados recusa
+       as alterações feitas nesta área. Fica memorizada neste dispositivo. -->
+  <div id="admin-session" style="background:#0f1015;border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;">
+    <div id="admin-session-in" style="display:none;font-size:13px;">
+      <span style="color:var(--kawasaki-green);font-weight:700;">● Sessão de administração ativa</span>
+      <span id="admin-session-email" style="color:var(--dim);margin-left:6px;"></span>
+      <button class="btn" style="margin-top:10px;" onclick="adminSignOut()">Terminar sessão</button>
+    </div>
+    <div id="admin-session-out" style="display:none;">
+      <div style="font-weight:700;margin-bottom:4px;">Iniciar sessão de administração</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;">Sem sessão iniciada, as alterações feitas aqui não são gravadas. Só é preciso uma vez em cada telemóvel.</div>
+      <input type="email" id="admin-login-email" placeholder="Email" autocomplete="username"
+        style="width:100%;background:#16171d;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:16px;padding:12px;margin-bottom:8px;box-sizing:border-box;">
+      <input type="password" id="admin-login-pass" placeholder="Palavra-passe" autocomplete="current-password"
+        style="width:100%;background:#16171d;border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:16px;padding:12px;margin-bottom:8px;box-sizing:border-box;"
+        onkeydown="if(event.key==='Enter') adminSignIn()">
+      <div id="admin-login-msg" style="font-size:13px;margin-bottom:8px;display:none;"></div>
+      <button class="btn btn-red" id="admin-login-btn" onclick="adminSignIn()">Iniciar sessão</button>
+    </div>
+  </div>
 
     <div class="card" id="admin-manual-card">
       <h2>➕ Lançar Resultado (Staff)</h2>
@@ -3602,10 +3637,18 @@ function getResultsCache() {
     return raw ? JSON.parse(raw) : {};
   } catch (e) { return {}; }
 }
-function saveResult(challengeId, payload) {
+// onFail(): chamado se a base de dados recusar o resultado (ex.: regras) — quem
+// lança vê logo que NÃO ficou gravado, em vez de um ✓ enganador.
+function saveResult(challengeId, payload, onFail) {
   const id = 'r' + Date.now() + Math.floor(Math.random() * 1000);
-  if (window.firebaseReady && window.fbSet) {
-    window.fbSet('resultsWeek/' + challengeId + '/' + id, payload);
+  if (window.firebaseReady && window.fbSetOk) {
+    window.fbSetOk('resultsWeek/' + challengeId + '/' + id, payload).then(ok => {
+      if (ok) return;
+      const c = getResultsCache();
+      if (c[challengeId]) { delete c[challengeId][id]; localStorage.setItem('gymChallengeWeekResults_v1', JSON.stringify(c)); }
+      if (typeof onFail === 'function') onFail();
+      renderAll();
+    });
   }
   // guarda também localmente já, para feedback imediato neste dispositivo
   const cache = getResultsCache();
@@ -3672,12 +3715,46 @@ async function checkPin() {
   if (ok) {
     document.getElementById('admin-lock').style.display = 'none';
     document.getElementById('admin-content').style.display = 'block';
+    renderAdminSession();
   } else {
     const err = document.getElementById('admin-pin-error');
     err.style.display = 'block';
     document.getElementById('admin-pin-input').value = '';
     setTimeout(() => err.style.display = 'none', 2000);
   }
+}
+function renderAdminSession() {
+  const inEl = document.getElementById('admin-session-in');
+  const outEl = document.getElementById('admin-session-out');
+  if (!inEl || !outEl) return;
+  const u = window.fbAdminUser;
+  inEl.style.display = u ? 'block' : 'none';
+  outEl.style.display = u ? 'none' : 'block';
+  document.getElementById('admin-session-email').textContent = u ? (u.email || '') : '';
+}
+async function adminSignIn() {
+  const email = document.getElementById('admin-login-email').value.trim();
+  const passEl = document.getElementById('admin-login-pass');
+  const msg = document.getElementById('admin-login-msg');
+  const btn = document.getElementById('admin-login-btn');
+  const say = (t, err) => { msg.textContent = t; msg.style.color = err ? 'var(--club-a)' : 'var(--dim)'; msg.style.display = 'block'; };
+  if (!window.fbSignIn) { say('Sem ligação ao serviço de login. Verifica a internet e recarrega a página.', true); return; }
+  if (!email || !passEl.value) { say('Escreve o email e a palavra-passe.', true); return; }
+  btn.disabled = true; say('A iniciar sessão…');
+  try {
+    await window.fbSignIn(email, passEl.value);
+    passEl.value = '';
+    msg.style.display = 'none';
+  } catch (e) {
+    const code = (e && e.code) || '';
+    say(code.includes('network') ? 'Sem internet. Tenta de novo.'
+      : code.includes('too-many-requests') ? 'Demasiadas tentativas. Espera uns minutos.'
+      : 'Email ou palavra-passe errados.', true);
+  }
+  btn.disabled = false;
+}
+async function adminSignOut() {
+  if (window.fbSignOut) { try { await window.fbSignOut(); } catch (e) {} }
 }
 function checkAdminAccess() {
   document.getElementById('admin-lock').style.display = 'block';
@@ -3941,16 +4018,27 @@ function announcePodium(challengeId) {
     podium: top3.map(r => ({ club: r.club, name: r.name, displayValue: displayValue(r.value, ch.unit) }))
   };
   setState(s);
+  try { localStorage.removeItem('gymChallengeWinnerHidden_v1'); } catch (e) {}
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
   document.getElementById('view-tv').classList.add('active');
   document.getElementById('nav-tv').classList.add('active');
   renderAll();
 }
+// Com sessão de administração: fecha o pódio em TODOS os ecrãs.
+// Sem sessão (ex.: TV do clube): esconde-o só neste ecrã — a base de dados não
+// aceita que um ecrã sem login mude o que os outros veem.
+function winnerKey(w) {
+  return w ? JSON.stringify([w.challengeId, w.day, (w.podium || []).map(r => r.name + '|' + r.displayValue)]) : '';
+}
 function closeWinner() {
   const s = getState();
-  s.winner = null;
-  setState(s);
+  if (window.fbAdminUser) {
+    s.winner = null;
+    setState(s);
+  } else {
+    try { localStorage.setItem('gymChallengeWinnerHidden_v1', winnerKey(s.winner)); } catch (e) {}
+  }
   renderAll();
 }
 function resetDayResults(challengeId) {
@@ -4090,7 +4178,9 @@ function submitResult(club, challengeId) {
     if (isNaN(value) || value < 0) { showMsg('staff-msg-' + club, 'Insere um resultado válido.', 'err'); return; }
     displayStr = value + ' ' + ch.unit;
   }
-  saveResult(challengeId, { name, club, value, day: todayStr(), ts: Date.now() });
+  saveResult(challengeId, { name, club, value, day: todayStr(), ts: Date.now() }, () => {
+    showMsg('staff-msg-' + club, '✗ NÃO gravado: ' + name + ' — ' + displayStr + '. Verifica a internet e lança de novo.', 'err');
+  });
   showMsg('staff-msg-' + club, '✓ ' + name + ' — ' + displayStr, 'ok');
   renderAll();
 }
@@ -4528,7 +4618,9 @@ function submitManualResult() {
   // Cada resultado tem o seu próprio sítio na base de dados (saveResult). Antes,
   // empurrar para s.results e chamar setState NÃO gravava nada (setState ignora
   // "results") — o resultado perdia-se ao recarregar.
-  saveResult(challengeId, { name, club, value, day, ts: Date.now() });
+  saveResult(challengeId, { name, club, value, day, ts: Date.now() }, () => {
+    showMsg('admin-manual-msg', '✗ NÃO gravado: ' + name + '. Confirma que tens sessão de administração iniciada e repete.', 'err');
+  });
   showMsg('admin-manual-msg', '✓ ' + name + ' — ' + displayStr + ' (' + dayDisplay(day) + ')', 'ok');
   nameInput.value = '';
   if (name2Input) name2Input.value = '';
@@ -4743,7 +4835,9 @@ function renderTV(sFull) {
   // O pódio anunciado aparece SEMPRE, mesmo antes de escolher Por Desafio/Clubes
   // (fica antes do 'return' de baixo, para não ficar escondido).
   const overlay = document.getElementById('winner-overlay');
-  if (s.winner && s.winner.podium) {
+  let hiddenWinner = '';
+  try { hiddenWinner = localStorage.getItem('gymChallengeWinnerHidden_v1') || ''; } catch (e) {}
+  if (s.winner && s.winner.podium && winnerKey(s.winner) !== hiddenWinner) {
     overlay.classList.add('show');
     document.getElementById('winner-challenge-name').textContent = s.winner.challengeName + ' · ' + dayDisplay(s.winner.day);
     const medals = ['🥇', '🥈', '🥉'];
@@ -5133,8 +5227,15 @@ async function savePhotoRecord(club, dataUrl) {
   }
 
   const payload = { img: dataUrl, driveUrl, ts: Date.now(), source, editionId: getEditionsData().active };
-  if (window.firebaseReady && window.fbSet) {
-    window.fbSet('photosWeek/' + club + '/' + id, payload);
+  if (window.firebaseReady && window.fbSetOk) {
+    // espera pela confirmação: se a base de dados recusar, quem chama mostra erro
+    // (com internet lenta não fica à espera para sempre: ao fim de 15 s segue,
+    //  e o Firebase acaba de enviar quando a ligação voltar)
+    const ok = await Promise.race([
+      window.fbSetOk('photosWeek/' + club + '/' + id, payload),
+      new Promise(r => setTimeout(() => r('pendente'), 15000))
+    ]);
+    if (ok === false) throw new Error('Foto recusada pela base de dados');
   }
   // guarda também localmente já, para feedback imediato neste dispositivo
   const photos = getPhotos();
